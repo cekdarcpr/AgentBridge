@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 280" role="img" aria-label="agentBridge">
+  <defs>
+    <linearGradient id="ab-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C5CFA"/>
+      <stop offset="0.5" stop-color="#5B5BF6"/>
+      <stop offset="1" stop-color="#2E8BFF"/>
+    </linearGradient>
+    <linearGradient id="ab-text" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9D8CFF"/>
+      <stop offset="1" stop-color="#5AAEFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(12 12) scale(0.25)">
+    <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#ab-bg)"/>
+    <path d="M512 196 Q532 280 616 300 Q532 320 512 404 Q492 320 408 300 Q492 280 512 196Z" fill="#FFFFFF"/>
+    <path d="M150 720H874" fill="none" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="44" stroke-linecap="round"/>
+    <path d="M262 720 A250 250 0 0 1 762 720" fill="none" stroke="#FFFFFF" stroke-width="76" stroke-linecap="round"/>
+    <circle cx="262" cy="720" r="84" fill="#FFFFFF"/>
+    <circle cx="762" cy="720" r="84" fill="#FFFFFF"/>
+  </g>
+  <text x="304" y="188" font-family="Segoe UI Variable Display, Segoe UI, Inter, Helvetica, Arial, sans-serif" font-size="148" letter-spacing="-3">
+    <tspan font-weight="500" fill="#EEF0F5">agent</tspan><tspan font-weight="700" fill="url(#ab-text)">Bridge</tspan>
+  </text>
+</svg>

@@ -1,0 +1,15 @@
+[package]
+name = "agentbridge-cli"
+description = "agb: the agentBridge command-line interface, designed to be called by coding agents"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "agb"
+path = "src/main.rs"
+
+[dependencies]
+agentbridge-core.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
