@@ -25,16 +25,14 @@ impl Provider for OpenAi {
     }
 
     fn supports(&self, capability: Capability) -> bool {
-        matches!(capability, Capability::Image | Capability::Speech | Capability::Text)
+        matches!(
+            capability,
+            Capability::Image | Capability::Speech | Capability::Text
+        )
     }
 
-    fn limitations(&self, request: &Request) -> Vec<String> {
-        match request {
-            Request::Image(r) if r.transparent && !r.format.supports_alpha() => {
-                vec!["transparent background needs .png or .webp output; generating an opaque image".into()]
-            }
-            _ => Vec::new(),
-        }
+    fn native_transparency(&self) -> bool {
+        true
     }
 
     fn execute(&self, ctx: &CallContext, request: &Request) -> Result<ProviderOutput, String> {
@@ -76,22 +74,18 @@ pub(crate) fn pick_size(requested: Option<(u32, u32)>) -> (u32, u32) {
     }
 }
 
+/// Always asks for PNG: a lossless master that `imaging` resizes and converts to the requested format.
 fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> {
-    let mut warnings = Vec::new();
     let (w, h) = pick_size(r.size);
-    if let Some((rw, rh)) = r.size.filter(|size| *size != (w, h)) {
-        warnings.push(format!("requested {rw}x{rh}, generated {w}x{h}; automatic resizing is not supported yet"));
-    }
-
     let mut body = json!({
         "model": ctx.model,
         "prompt": r.prompt,
         "n": 1,
         "size": format!("{w}x{h}"),
         "quality": r.quality.as_deref().unwrap_or(DEFAULT_QUALITY),
-        "output_format": r.format.as_str(),
+        "output_format": "png",
     });
-    if r.transparent && r.format.supports_alpha() {
+    if r.transparent {
         body["background"] = json!("transparent");
     }
 
@@ -100,12 +94,17 @@ fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> 
         .pointer("/data/0/b64_json")
         .and_then(Value::as_str)
         .ok_or_else(|| "response contained no image data".to_string())?;
-    let data = STANDARD.decode(encoded).map_err(|e| format!("invalid base64 image data: {e}"))?;
+    let data = STANDARD
+        .decode(encoded)
+        .map_err(|e| format!("invalid base64 image data: {e}"))?;
 
     Ok(ProviderOutput {
-        payload: Payload::Bytes { data, mime: r.format.mime().into() },
+        payload: Payload::Bytes {
+            data,
+            mime: "image/png".into(),
+        },
         usage: usage_from(&value, "/usage/input_tokens", "/usage/output_tokens"),
-        warnings,
+        warnings: Vec::new(),
     })
 }
 
@@ -118,7 +117,10 @@ fn speech(ctx: &CallContext, r: &SpeechRequest) -> Result<ProviderOutput, String
     });
     let data = http::read_bytes(post(ctx, "/audio/speech", &body)?)?;
     Ok(ProviderOutput {
-        payload: Payload::Bytes { data, mime: r.format.mime().into() },
+        payload: Payload::Bytes {
+            data,
+            mime: r.format.mime().into(),
+        },
         usage: None,
         warnings: Vec::new(),
     })

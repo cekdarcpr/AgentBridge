@@ -2,6 +2,7 @@ pub mod elevenlabs;
 pub mod gemini;
 mod http;
 pub mod openai;
+pub mod openrouter;
 
 use std::time::Duration;
 
@@ -14,10 +15,12 @@ use crate::{
     request::Request,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// Amount the provider says it billed, when it reports one (OpenRouter does).
+    pub cost_usd: Option<f64>,
 }
 
 #[derive(Debug)]
@@ -45,10 +48,10 @@ pub trait Provider: Send + Sync {
 
     fn supports(&self, capability: Capability) -> bool;
 
-    /// Request features this provider cannot honour. The router tries such providers last
-    /// and reports these as warnings instead of failing.
-    fn limitations(&self, _request: &Request) -> Vec<String> {
-        Vec::new()
+    /// Whether the model itself can return an image with an alpha channel. Other providers get
+    /// transparency by drawing on a flat backdrop that is removed afterwards (see `imaging`).
+    fn native_transparency(&self) -> bool {
+        false
     }
 
     /// Errors are plain messages; the engine redacts the API key from them before logging.
@@ -66,7 +69,10 @@ pub fn verify_key(id: ProviderId, api_key: &str) -> Result<(), String> {
         .timeout(Duration::from_secs(VERIFY_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("could not build HTTP client: {e}"))?;
-    let response = get(id).verify_request(&client, api_key).send().map_err(http::network_error)?;
+    let response = get(id)
+        .verify_request(&client, api_key)
+        .send()
+        .map_err(http::network_error)?;
     http::ensure_success(response).map(|_| ())
 }
 
@@ -75,18 +81,23 @@ pub fn get(id: ProviderId) -> &'static dyn Provider {
         ProviderId::Openai => &openai::OpenAi,
         ProviderId::Gemini => &gemini::Gemini,
         ProviderId::Elevenlabs => &elevenlabs::ElevenLabs,
+        ProviderId::Openrouter => &openrouter::OpenRouter,
     }
 }
 
 pub fn capabilities(id: ProviderId) -> Vec<Capability> {
     let provider = get(id);
-    Capability::ALL.into_iter().filter(|c| provider.supports(*c)).collect()
+    Capability::ALL
+        .into_iter()
+        .filter(|c| provider.supports(*c))
+        .collect()
 }
 
 fn usage_from(value: &Value, input_pointer: &str, output_pointer: &str) -> Option<Usage> {
     Some(Usage {
         input_tokens: value.pointer(input_pointer)?.as_u64()?,
         output_tokens: value.pointer(output_pointer)?.as_u64()?,
+        cost_usd: None,
     })
 }
 

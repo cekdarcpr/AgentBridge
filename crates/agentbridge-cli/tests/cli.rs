@@ -9,7 +9,12 @@ use std::{
 
 use serde_json::Value;
 
-const KEY_VARS: [&str; 3] = ["OPENAI_API_KEY", "GEMINI_API_KEY", "ELEVENLABS_API_KEY"];
+const KEY_VARS: [&str; 4] = [
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "OPENROUTER_API_KEY",
+];
 
 struct Sandbox {
     home: PathBuf,
@@ -17,7 +22,8 @@ struct Sandbox {
 
 impl Sandbox {
     fn new(name: &str) -> Self {
-        let home = std::env::temp_dir().join(format!("agentbridge-test-{}-{name}", std::process::id()));
+        let home =
+            std::env::temp_dir().join(format!("agentbridge-test-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&home);
         fs::create_dir_all(&home).unwrap();
         Self { home }
@@ -38,8 +44,12 @@ impl Sandbox {
             cmd.env(var, value);
         }
         let output = cmd.output().unwrap();
-        let json = serde_json::from_slice(&output.stdout)
-            .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {}", String::from_utf8_lossy(&output.stdout)));
+        let json = serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
+            panic!(
+                "stdout is not JSON ({e}): {}",
+                String::from_utf8_lossy(&output.stdout)
+            )
+        });
         (output, json)
     }
 }
@@ -54,7 +64,13 @@ impl Drop for Sandbox {
 fn dry_run_picks_first_provider_with_a_key() {
     let sandbox = Sandbox::new("dry-run");
     let (output, json) = sandbox.run(
-        &["image", "sword icon", "--out", "assets/sword.png", "--dry-run"],
+        &[
+            "image",
+            "sword icon",
+            "--out",
+            "assets/sword.png",
+            "--dry-run",
+        ],
         &[("GEMINI_API_KEY", "test-gemini-key")],
     );
     assert!(output.status.success());
@@ -66,20 +82,210 @@ fn dry_run_picks_first_provider_with_a_key() {
 }
 
 #[test]
-fn transparency_prefers_capable_provider_and_warns_otherwise() {
+fn transparency_works_with_every_image_provider() {
     let sandbox = Sandbox::new("transparent");
+    let args = [
+        "image",
+        "icon",
+        "--out",
+        "a.png",
+        "--transparent",
+        "--trim",
+        "--dry-run",
+    ];
     let (_, json) = sandbox.run(
-        &["image", "icon", "--out", "a.png", "--transparent", "--dry-run"],
-        &[("GEMINI_API_KEY", "g-key-123456"), ("OPENAI_API_KEY", "o-key-123456")],
+        &args,
+        &[
+            ("GEMINI_API_KEY", "g-key-123456"),
+            ("OPENAI_API_KEY", "o-key-123456"),
+        ],
     );
-    assert_eq!(json["provider"], "openai");
+    assert_eq!(
+        json["provider"], "openai",
+        "routing order decides, not transparency"
+    );
 
-    let (_, json) = sandbox.run(
-        &["image", "icon", "--out", "a.png", "--transparent", "--dry-run"],
-        &[("GEMINI_API_KEY", "g-key-123456")],
-    );
+    let (output, json) = sandbox.run(&args, &[("GEMINI_API_KEY", "g-key-123456")]);
+    assert!(output.status.success());
     assert_eq!(json["provider"], "gemini");
-    assert!(json["warnings"][0].as_str().unwrap().contains("transparent"));
+    assert_eq!(json["warnings"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn transparent_jpeg_and_trim_without_transparency_are_rejected() {
+    let sandbox = Sandbox::new("jpeg");
+    let keys = [("OPENAI_API_KEY", "o-key-123456")];
+    let (output, json) = sandbox.run(
+        &[
+            "image",
+            "icon",
+            "--out",
+            "a.jpg",
+            "--transparent",
+            "--dry-run",
+        ],
+        &keys,
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(json["error"]["message"].as_str().unwrap().contains("JPEG"));
+
+    let (output, _) = sandbox.run(
+        &["image", "icon", "--out", "a.png", "--trim", "--dry-run"],
+        &keys,
+    );
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn openrouter_is_selected_by_vendor_model_ids() {
+    let sandbox = Sandbox::new("openrouter");
+    let (output, json) = sandbox.run(
+        &[
+            "image",
+            "icon",
+            "--out",
+            "a.webp",
+            "--model",
+            "google/gemini-2.5-flash-image",
+            "--dry-run",
+        ],
+        &[("OPENROUTER_API_KEY", "or-key-123456")],
+    );
+    assert!(output.status.success());
+    assert_eq!(json["provider"], "openrouter");
+    assert_eq!(json["cost_usd"], 0.039);
+
+    // Without other keys, OpenRouter serves as the last fallback in the default routing.
+    let (_, json) = sandbox.run(
+        &["ask", "hello", "--dry-run"],
+        &[("OPENROUTER_API_KEY", "or-key-123456")],
+    );
+    assert_eq!(json["provider"], "openrouter");
+    assert_eq!(json["model"], "google/gemini-2.5-flash");
+}
+
+/// A 200x100 blue rectangle on a flat magenta backdrop, like a keyed provider output.
+fn write_sprite(path: &std::path::Path) {
+    let img = image::RgbaImage::from_fn(200, 100, |x, y| {
+        let inside = (60..140).contains(&x) && (25..75).contains(&y);
+        image::Rgba(if inside {
+            [20, 40, 200, 255]
+        } else {
+            [255, 0, 255, 255]
+        })
+    });
+    img.save(path).unwrap();
+}
+
+#[test]
+fn process_resizes_converts_and_removes_backgrounds_locally() {
+    let sandbox = Sandbox::new("process");
+    write_sprite(&sandbox.home.join("raw.png"));
+    let (output, json) = sandbox.run(
+        &[
+            "process",
+            "raw.png",
+            "--out",
+            "out/sprite.webp",
+            "--size",
+            "64x64",
+            "--transparent",
+            "--trim",
+        ],
+        &[],
+    );
+    assert!(output.status.success(), "{json}");
+    assert_eq!(
+        (json["width"].as_u64(), json["height"].as_u64()),
+        (Some(64), Some(64))
+    );
+
+    let result = image::open(sandbox.home.join("out/sprite.webp"))
+        .unwrap()
+        .to_rgba8();
+    assert_eq!(result.dimensions(), (64, 64));
+    assert_eq!(
+        result.get_pixel(0, 0)[3],
+        0,
+        "corner is transparent padding"
+    );
+    assert_eq!(result.get_pixel(32, 32)[3], 255, "subject stays opaque");
+
+    let (output, json) = sandbox.run(&["process", "raw.png", "--out", "out/sprite.webp"], &[]);
+    assert_eq!(output.status.code(), Some(6), "{json}");
+}
+
+#[test]
+fn icon_set_from_an_existing_image() {
+    let sandbox = Sandbox::new("icons");
+    write_sprite(&sandbox.home.join("logo.png"));
+    let (output, json) = sandbox.run(
+        &[
+            "icon-set",
+            "--from",
+            "logo.png",
+            "--out-dir",
+            "public",
+            "--preset",
+            "web",
+        ],
+        &[],
+    );
+    assert!(output.status.success(), "{json}");
+    assert_eq!(json["files"].as_array().unwrap().len(), 7);
+    assert!(json["html"].as_str().unwrap().contains("favicon.ico"));
+    assert!(json.get("generation").is_none());
+    for name in [
+        "favicon.ico",
+        "favicon-32x32.png",
+        "apple-touch-icon.png",
+        "android-chrome-512x512.png",
+        "site.webmanifest",
+    ] {
+        assert!(
+            sandbox.home.join("public").join(name).exists(),
+            "{name} missing"
+        );
+    }
+
+    let (output, _) = sandbox.run(
+        &["icon-set", "--from", "logo.png", "--out-dir", "public"],
+        &[],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(6),
+        "existing icons need --overwrite"
+    );
+}
+
+#[test]
+fn icon_set_dry_run_plans_the_generation() {
+    let sandbox = Sandbox::new("icon-plan");
+    let (output, json) = sandbox.run(
+        &[
+            "icon-set",
+            "rocket",
+            "--out-dir",
+            "icons",
+            "--preset",
+            "app",
+            "--dry-run",
+        ],
+        &[("OPENAI_API_KEY", "o-key-123456")],
+    );
+    assert!(output.status.success(), "{json}");
+    assert_eq!(json["dry_run"], true);
+    assert_eq!(json["generation"]["provider"], "openai");
+    assert!(json["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f.as_str().unwrap().ends_with("icon.ico")));
+    assert!(
+        !sandbox.home.join("icons").exists(),
+        "a dry run writes nothing"
+    );
 }
 
 #[test]
@@ -95,7 +301,11 @@ fn missing_keys_report_no_provider() {
 #[test]
 fn budget_is_enforced_before_calling_the_provider() {
     let sandbox = Sandbox::new("budget");
-    fs::write(sandbox.home.join("config.toml"), "[limits]\nmax_call_usd = 0.001\n").unwrap();
+    fs::write(
+        sandbox.home.join("config.toml"),
+        "[limits]\nmax_call_usd = 0.001\n",
+    )
+    .unwrap();
     let (output, json) = sandbox.run(
         &["image", "icon", "--out", "a.png"],
         &[("OPENAI_API_KEY", "o-key-123456")],
@@ -136,7 +346,7 @@ fn providers_and_usage_report_state() {
     let sandbox = Sandbox::new("info");
     let (_, json) = sandbox.run(&["providers"], &[("OPENAI_API_KEY", "o-key-123456")]);
     let providers = json["providers"].as_array().unwrap();
-    assert_eq!(providers.len(), 3);
+    assert_eq!(providers.len(), 4);
     assert_eq!(providers[0]["key"], "env");
     assert_eq!(providers[1]["key"], "missing");
 

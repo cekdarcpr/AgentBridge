@@ -2,6 +2,8 @@ use agentbridge_core::{RunFailure, RunResult};
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::assets::{IconSetPlan, IconSetResult, ProcessResult};
+
 pub fn print_json(value: &impl Serialize) {
     match serde_json::to_string_pretty(value) {
         Ok(text) => println!("{text}"),
@@ -45,8 +47,78 @@ pub fn print_result(result: &RunResult, json: bool) {
         (Some(path), _) => println!("{path}"),
         (None, None) => {}
     }
-    let fallback = if result.fallback_used { " (fallback)" } else { "" };
-    eprintln!("{}/{}{fallback} · {approx}${:.3}", result.provider, result.model, result.cost_usd);
+    let fallback = if result.fallback_used {
+        " (fallback)"
+    } else {
+        ""
+    };
+    let size = match (result.width, result.height) {
+        (Some(w), Some(h)) => format!(" · {w}x{h}"),
+        _ => String::new(),
+    };
+    eprintln!(
+        "{}/{}{fallback} · {approx}${:.3}{size}",
+        result.provider, result.model, result.cost_usd
+    );
+}
+
+fn print_warnings(warnings: &[String]) {
+    for warning in warnings {
+        eprintln!("warning: {warning}");
+    }
+}
+
+pub fn print_process(result: &ProcessResult, json: bool) {
+    if json {
+        print_ok(result);
+        return;
+    }
+    print_warnings(&result.warnings);
+    println!("{}", result.output);
+    eprintln!("{}x{} · local, no cost", result.width, result.height);
+}
+
+pub fn print_icon_set(result: &IconSetResult, json: bool) {
+    if json {
+        print_ok(result);
+        return;
+    }
+    if let Some(generation) = &result.generation {
+        print_warnings(&generation.warnings);
+        let approx = if generation.cost_is_estimate { "~" } else { "" };
+        eprintln!(
+            "generated with {}/{} · {approx}${:.3}",
+            generation.provider, generation.model, generation.cost_usd
+        );
+    }
+    print_warnings(&result.set.warnings);
+    for file in &result.set.files {
+        println!("{file}");
+    }
+    if let Some(html) = &result.set.html {
+        eprintln!("\nAdd to the page <head>:");
+        println!("{html}");
+    }
+}
+
+pub fn print_icon_plan(plan: &IconSetPlan, json: bool) {
+    if json {
+        print_ok(plan);
+        return;
+    }
+    match &plan.generation {
+        Some(g) => eprintln!(
+            "dry run: would generate the master with {}/{}, estimated ~${:.3}",
+            g.provider, g.model, g.cost_usd
+        ),
+        None => eprintln!(
+            "dry run: would build the {} icon set from the given image (no cost)",
+            plan.preset
+        ),
+    }
+    for file in &plan.files {
+        println!("{file}");
+    }
 }
 
 pub fn print_failure(failure: &RunFailure, json: bool) {
@@ -60,8 +132,15 @@ pub fn print_failure(failure: &RunFailure, json: bool) {
     }
     eprintln!("error: {}", failure.error);
     for attempt in &failure.attempts {
-        let model = attempt.model.as_deref().map(|m| format!("/{m}")).unwrap_or_default();
+        let model = attempt
+            .model
+            .as_deref()
+            .map(|m| format!("/{m}"))
+            .unwrap_or_default();
         let reason = attempt.reason.as_deref().unwrap_or("");
-        eprintln!("  {}{model}: {:?} {reason}", attempt.provider, attempt.status);
+        eprintln!(
+            "  {}{model}: {:?} {reason}",
+            attempt.provider, attempt.status
+        );
     }
 }

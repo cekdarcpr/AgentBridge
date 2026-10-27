@@ -1,9 +1,10 @@
+mod assets;
 mod commands;
 mod output;
 
 use std::{path::PathBuf, process::ExitCode};
 
-use agentbridge_core::{AppError, ProviderId, RunFailure};
+use agentbridge_core::{icons::IconPreset, AppError, Fit, ProviderId, RunFailure};
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
 
 const DEFAULT_USAGE_DAYS: u32 = 7;
@@ -15,8 +16,9 @@ const MAX_DURATION_SECS: f32 = 30.0;
 #[command(
     name = "agb",
     version,
-    about = "Generate images, sound effects, speech and text through multiple AI providers.",
-    long_about = "Generate images, sound effects, speech and text through multiple AI providers.\n\
+    about = "Ready-to-use images, icons, sound effects and speech for coding agents.",
+    long_about = "Ready-to-use images, icons, sound effects and speech for coding agents.\n\
+                  Generates through your own AI provider keys, then sizes, converts and cleans up the result.\n\
                   Built to be called by coding agents: pass --json for machine-readable output.\n\
                   Exit codes: 0 ok, 2 usage/config, 3 budget exceeded, 4 no usable provider, 5 provider error, 6 output error."
 )]
@@ -31,7 +33,7 @@ struct Cli {
 
 #[derive(Args)]
 struct GenOptions {
-    /// Use only this provider (openai, gemini, elevenlabs)
+    /// Use only this provider (openai, gemini, elevenlabs, openrouter)
     #[arg(long, value_parser = parse_provider)]
     provider: Option<ProviderId>,
     /// Model name; the provider is inferred from it when --provider is omitted
@@ -76,16 +78,65 @@ enum Command {
         /// Output file; the extension selects the format
         #[arg(long)]
         out: PathBuf,
-        /// Desired size as WIDTHxHEIGHT; providers pick the closest size they support
+        /// Exact output size as WIDTHxHEIGHT, e.g. 64x64
         #[arg(long)]
         size: Option<String>,
-        /// Request a transparent background (.png/.webp)
+        /// How the image fills --size: cover (crop), contain (pad) or stretch [default: contain with --transparent, otherwise cover]
+        #[arg(long, value_parser = parse_fit)]
+        fit: Option<Fit>,
+        /// Transparent background (.png/.webp); works with every provider
         #[arg(long)]
         transparent: bool,
+        /// Crop transparent margins so the subject fills the frame (needs --transparent)
+        #[arg(long)]
+        trim: bool,
         #[arg(long, value_enum)]
         quality: Option<Quality>,
         #[command(flatten)]
         gen: GenOptions,
+    },
+    /// Generate a complete icon set (favicons or app icons) from a prompt or an existing image
+    IconSet {
+        /// What the icon should show; omit when using --from
+        #[arg(required_unless_present = "from")]
+        prompt: Option<String>,
+        /// Folder the icons are written to
+        #[arg(long)]
+        out_dir: PathBuf,
+        /// web: favicon.ico, PNG favicons, Apple touch icon, manifest icons; app: PNG sizes up to 1024 and icon.ico
+        #[arg(long, value_parser = parse_preset, default_value = "web")]
+        preset: IconPreset,
+        /// Build the set from this image instead of generating one (free)
+        #[arg(long, conflicts_with = "prompt")]
+        from: Option<PathBuf>,
+        /// Transparent background around the generated icon
+        #[arg(long, conflicts_with = "from")]
+        transparent: bool,
+        #[command(flatten)]
+        gen: GenOptions,
+    },
+    /// Resize, convert, trim or remove the background of an existing image (local, free)
+    Process {
+        /// Image to process (.png, .jpg, .webp)
+        input: PathBuf,
+        /// Output file; the extension selects the format
+        #[arg(long)]
+        out: PathBuf,
+        /// Exact output size as WIDTHxHEIGHT
+        #[arg(long)]
+        size: Option<String>,
+        /// How the image fills --size: cover, contain or stretch [default: contain with --transparent, otherwise cover]
+        #[arg(long, value_parser = parse_fit)]
+        fit: Option<Fit>,
+        /// Remove a flat, single-color background
+        #[arg(long)]
+        transparent: bool,
+        /// Crop transparent margins
+        #[arg(long)]
+        trim: bool,
+        /// Replace the output file if it already exists
+        #[arg(long)]
+        overwrite: bool,
     },
     /// Generate a sound effect (.mp3, .wav)
     Audio {
@@ -187,10 +238,22 @@ fn parse_provider(value: &str) -> Result<ProviderId, String> {
     value.parse()
 }
 
+fn parse_fit(value: &str) -> Result<Fit, String> {
+    value.parse()
+}
+
+fn parse_preset(value: &str) -> Result<IconPreset, String> {
+    value.parse()
+}
+
 fn parse_duration(value: &str) -> Result<f32, String> {
-    let secs: f32 = value.parse().map_err(|_| format!("'{value}' is not a number"))?;
+    let secs: f32 = value
+        .parse()
+        .map_err(|_| format!("'{value}' is not a number"))?;
     if !(MIN_DURATION_SECS..=MAX_DURATION_SECS).contains(&secs) {
-        return Err(format!("duration must be between {MIN_DURATION_SECS} and {MAX_DURATION_SECS} seconds"));
+        return Err(format!(
+            "duration must be between {MIN_DURATION_SECS} and {MAX_DURATION_SECS} seconds"
+        ));
     }
     Ok(secs)
 }
@@ -213,11 +276,16 @@ fn main() -> ExitCode {
 /// Agents that asked for JSON get JSON even when the arguments themselves are wrong.
 fn handle_parse_error(error: clap::Error) -> ExitCode {
     let wants_json = std::env::args().any(|arg| arg == "--json");
-    let is_info = matches!(error.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion);
+    let is_info = matches!(
+        error.kind(),
+        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+    );
     if !wants_json || is_info {
         error.exit();
     }
-    let failure = RunFailure::from(AppError::Usage(error.render().to_string().trim().to_string()));
+    let failure = RunFailure::from(AppError::Usage(
+        error.render().to_string().trim().to_string(),
+    ));
     output::print_failure(&failure, true);
     ExitCode::from(failure.error.exit_code())
 }

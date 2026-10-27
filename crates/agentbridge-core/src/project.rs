@@ -1,7 +1,9 @@
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
 };
+
+use crate::error::AppError;
 
 pub const PROJECT_ENV: &str = "AGENTBRIDGE_PROJECT";
 
@@ -21,6 +23,37 @@ pub fn resolve(explicit: Option<&str>) -> String {
         .find(|dir| dir.join(".git").exists())
         .unwrap_or(&cwd);
     display_path(root)
+}
+
+/// Makes `path` absolute with consistent separators and refuses to replace an existing file
+/// unless `overwrite` is set, so a generated asset never silently destroys one.
+pub fn resolve_output(path: &Path, overwrite: bool) -> Result<PathBuf, AppError> {
+    let normalized = absolute(path)?;
+    if normalized.exists() && !overwrite {
+        return Err(AppError::Output(format!(
+            "{} already exists; pass --overwrite to replace it",
+            display_path(&normalized)
+        )));
+    }
+    Ok(normalized)
+}
+
+/// Absolute path with the platform's separators, e.g. `assets/a.png` becomes `C:\proj\assets\a.png`.
+pub fn absolute(path: &Path) -> Result<PathBuf, AppError> {
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    };
+    Ok(joined.components().collect())
+}
+
+pub fn write_file(path: &Path, data: &[u8]) -> Result<(), AppError> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(path, data)
+        .map_err(|e| AppError::Output(format!("could not write {}: {e}", display_path(path))))
 }
 
 /// Drops the `\\?\` verbatim prefix Windows adds to canonical paths; agents and users never expect it.

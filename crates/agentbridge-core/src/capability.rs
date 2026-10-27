@@ -38,16 +38,23 @@ pub enum ProviderId {
     Openai,
     Gemini,
     Elevenlabs,
+    Openrouter,
 }
 
 impl ProviderId {
-    pub const ALL: [ProviderId; 3] = [Self::Openai, Self::Gemini, Self::Elevenlabs];
+    pub const ALL: [ProviderId; 4] = [
+        Self::Openai,
+        Self::Gemini,
+        Self::Elevenlabs,
+        Self::Openrouter,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Openai => "openai",
             Self::Gemini => "gemini",
             Self::Elevenlabs => "elevenlabs",
+            Self::Openrouter => "openrouter",
         }
     }
 
@@ -56,6 +63,7 @@ impl ProviderId {
             Self::Openai => "OpenAI",
             Self::Gemini => "Google Gemini",
             Self::Elevenlabs => "ElevenLabs",
+            Self::Openrouter => "OpenRouter",
         }
     }
 
@@ -65,12 +73,17 @@ impl ProviderId {
             Self::Openai => "OPENAI_API_KEY",
             Self::Gemini => "GEMINI_API_KEY",
             Self::Elevenlabs => "ELEVENLABS_API_KEY",
+            Self::Openrouter => "OPENROUTER_API_KEY",
         }
     }
 
     /// Lets `--model` work without `--provider` for the common model families.
     pub fn infer_from_model(model: &str) -> Option<Self> {
         let model = model.to_ascii_lowercase();
+        // OpenRouter ids are `vendor/model`; no other provider uses a slash.
+        if model.contains('/') {
+            return Some(Self::Openrouter);
+        }
         let openai_prefixes = ["gpt-", "o1", "o3", "o4", "tts-"];
         if openai_prefixes.iter().any(|p| model.starts_with(p)) {
             Some(Self::Openai)
@@ -98,8 +111,9 @@ impl FromStr for ProviderId {
             "openai" => Ok(Self::Openai),
             "gemini" | "google" => Ok(Self::Gemini),
             "elevenlabs" => Ok(Self::Elevenlabs),
+            "openrouter" => Ok(Self::Openrouter),
             other => Err(format!(
-                "unknown provider '{other}' (expected: openai, gemini, elevenlabs)"
+                "unknown provider '{other}' (expected: openai, gemini, elevenlabs, openrouter)"
             )),
         }
     }
@@ -111,10 +125,27 @@ mod tests {
 
     #[test]
     fn infers_provider_from_model_name() {
-        assert_eq!(ProviderId::infer_from_model("gpt-image-1"), Some(ProviderId::Openai));
-        assert_eq!(ProviderId::infer_from_model("Gemini-2.5-Pro"), Some(ProviderId::Gemini));
-        assert_eq!(ProviderId::infer_from_model("eleven_v3"), Some(ProviderId::Elevenlabs));
+        assert_eq!(
+            ProviderId::infer_from_model("gpt-image-1"),
+            Some(ProviderId::Openai)
+        );
+        assert_eq!(
+            ProviderId::infer_from_model("Gemini-2.5-Pro"),
+            Some(ProviderId::Gemini)
+        );
+        assert_eq!(
+            ProviderId::infer_from_model("eleven_v3"),
+            Some(ProviderId::Elevenlabs)
+        );
         assert_eq!(ProviderId::infer_from_model("mystery-model"), None);
+        assert_eq!(
+            ProviderId::infer_from_model("google/gemini-2.5-flash-image"),
+            Some(ProviderId::Openrouter)
+        );
+        assert_eq!(
+            ProviderId::infer_from_model("openai/gpt-4o"),
+            Some(ProviderId::Openrouter)
+        );
     }
 
     #[test]

@@ -1,6 +1,10 @@
 use std::path::Path;
 
-use crate::{capability::Capability, error::AppError};
+use crate::{
+    capability::Capability,
+    error::AppError,
+    imaging::{Fit, BACKDROP_PROMPT, MAX_DIMENSION},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
@@ -89,6 +93,16 @@ pub struct ImageRequest {
     pub transparent: bool,
     pub quality: Option<String>,
     pub format: ImageFormat,
+    /// `None` picks a default from `transparent` (see `Fit::default_for`).
+    pub fit: Option<Fit>,
+    pub trim: bool,
+}
+
+impl ImageRequest {
+    pub fn effective_fit(&self) -> Fit {
+        self.fit
+            .unwrap_or_else(|| Fit::default_for(self.transparent))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +152,34 @@ impl Request {
         }
     }
 
+    /// Rejects requests that cannot produce the asked-for file, before any money is spent.
+    pub fn validate(&self) -> Result<(), AppError> {
+        if let Self::Image(r) = self {
+            if r.transparent && !r.format.supports_alpha() {
+                return Err(AppError::Usage(
+                    "JPEG cannot be transparent; use a .png or .webp output".into(),
+                ));
+            }
+            if r.trim && !r.transparent {
+                return Err(AppError::Usage(
+                    "--trim removes transparent margins; combine it with --transparent".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The same request with the prompt asking for a flat backdrop that can be removed locally.
+    pub fn with_backdrop(&self) -> Self {
+        match self {
+            Self::Image(r) => Self::Image(ImageRequest {
+                prompt: format!("{} {BACKDROP_PROMPT}", r.prompt.trim_end()),
+                ..r.clone()
+            }),
+            other => other.clone(),
+        }
+    }
+
     pub fn expected_mime(&self) -> Option<&'static str> {
         match self {
             Self::Image(r) => Some(r.format.mime()),
@@ -150,13 +192,22 @@ impl Request {
 
 /// Parses `WIDTHxHEIGHT`, e.g. `64x64`.
 pub fn parse_size(value: &str) -> Result<(u32, u32), AppError> {
-    let invalid = || AppError::Usage(format!("invalid size '{value}' (expected WIDTHxHEIGHT, e.g. 512x512)"));
+    let invalid = || {
+        AppError::Usage(format!(
+            "invalid size '{value}' (expected WIDTHxHEIGHT, e.g. 512x512)"
+        ))
+    };
     let lower = value.trim().to_ascii_lowercase();
     let (w, h) = lower.split_once('x').ok_or_else(invalid)?;
     let w: u32 = w.trim().parse().map_err(|_| invalid())?;
     let h: u32 = h.trim().parse().map_err(|_| invalid())?;
     if w == 0 || h == 0 {
         return Err(invalid());
+    }
+    if w > MAX_DIMENSION || h > MAX_DIMENSION {
+        return Err(AppError::Usage(format!(
+            "size '{value}' is too large; the maximum is {MAX_DIMENSION}x{MAX_DIMENSION}"
+        )));
     }
     Ok((w, h))
 }
@@ -171,12 +222,19 @@ mod tests {
         assert_eq!(parse_size("1536X1024").unwrap(), (1536, 1024));
         assert!(parse_size("0x10").is_err());
         assert!(parse_size("big").is_err());
+        assert!(parse_size("9000x10").is_err());
     }
 
     #[test]
     fn detects_formats_from_extension() {
-        assert_eq!(ImageFormat::from_path(Path::new("a/b.JPG")).unwrap(), ImageFormat::Jpeg);
-        assert_eq!(AudioFormat::from_path(Path::new("click.wav")).unwrap(), AudioFormat::Wav);
+        assert_eq!(
+            ImageFormat::from_path(Path::new("a/b.JPG")).unwrap(),
+            ImageFormat::Jpeg
+        );
+        assert_eq!(
+            AudioFormat::from_path(Path::new("click.wav")).unwrap(),
+            AudioFormat::Wav
+        );
         assert!(ImageFormat::from_path(Path::new("x.gif")).is_err());
     }
 }

@@ -24,7 +24,9 @@ pub struct ApiKey {
 // Deliberately not Debug-printing the value anywhere.
 impl std::fmt::Debug for ApiKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ApiKey").field("source", &self.source).finish_non_exhaustive()
+        f.debug_struct("ApiKey")
+            .field("source", &self.source)
+            .finish_non_exhaustive()
     }
 }
 
@@ -33,21 +35,31 @@ fn keychain_enabled() -> bool {
 }
 
 fn entry(provider: ProviderId) -> Result<Entry, AppError> {
-    Entry::new(SERVICE, provider.as_str()).map_err(|e| AppError::Keychain(format!("keychain unavailable: {e}")))
+    Entry::new(SERVICE, provider.as_str())
+        .map_err(|e| AppError::Keychain(format!("keychain unavailable: {e}")))
 }
 
 /// Keychain wins over env vars so a deliberately stored key is never shadowed by a stale shell variable.
 pub fn get(provider: ProviderId) -> Result<Option<ApiKey>, AppError> {
     if keychain_enabled() {
         // A broken keychain (e.g. headless Linux) should not block env-var keys.
-        if let Ok(value) = entry(provider).and_then(|e| e.get_password().map_err(|e| AppError::Keychain(e.to_string()))) {
+        if let Ok(value) = entry(provider).and_then(|e| {
+            e.get_password()
+                .map_err(|e| AppError::Keychain(e.to_string()))
+        }) {
             if !value.trim().is_empty() {
-                return Ok(Some(ApiKey { value: value.trim().to_string(), source: KeySource::Keychain }));
+                return Ok(Some(ApiKey {
+                    value: value.trim().to_string(),
+                    source: KeySource::Keychain,
+                }));
             }
         }
     }
     match env::var(provider.env_var()) {
-        Ok(value) if !value.trim().is_empty() => Ok(Some(ApiKey { value: value.trim().to_string(), source: KeySource::Env })),
+        Ok(value) if !value.trim().is_empty() => Ok(Some(ApiKey {
+            value: value.trim().to_string(),
+            source: KeySource::Env,
+        })),
         _ => Ok(None),
     }
 }
@@ -84,7 +96,9 @@ pub fn set(provider: ProviderId, value: &str) -> Result<(), AppError> {
         return Err(AppError::Usage("API key is empty".into()));
     }
     if !keychain_enabled() {
-        return Err(AppError::Keychain(format!("keychain disabled by {NO_KEYCHAIN_ENV}")));
+        return Err(AppError::Keychain(format!(
+            "keychain disabled by {NO_KEYCHAIN_ENV}"
+        )));
     }
     entry(provider)?
         .set_password(value)

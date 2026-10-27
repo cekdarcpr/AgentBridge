@@ -35,15 +35,6 @@ impl Provider for Gemini {
         matches!(capability, Capability::Image | Capability::Text)
     }
 
-    fn limitations(&self, request: &Request) -> Vec<String> {
-        match request {
-            Request::Image(r) if r.transparent => {
-                vec!["Gemini image models do not produce transparent backgrounds; the image will be opaque".into()]
-            }
-            _ => Vec::new(),
-        }
-    }
-
     fn execute(&self, ctx: &CallContext, request: &Request) -> Result<ProviderOutput, String> {
         match request {
             Request::Image(r) => image(ctx, r),
@@ -70,21 +61,37 @@ fn generate(ctx: &CallContext, body: &Value) -> Result<Value, String> {
 }
 
 fn parts(value: &Value) -> Result<&Vec<Value>, String> {
-    if let Some(reason) = value.pointer("/promptFeedback/blockReason").and_then(Value::as_str) {
+    if let Some(reason) = value
+        .pointer("/promptFeedback/blockReason")
+        .and_then(Value::as_str)
+    {
         return Err(format!("prompt blocked by provider: {reason}"));
     }
-    value.pointer("/candidates/0/content/parts").and_then(Value::as_array).ok_or_else(|| {
-        let finish = value.pointer("/candidates/0/finishReason").and_then(Value::as_str).unwrap_or("unknown");
-        format!("response contained no content (finishReason: {finish})")
-    })
+    value
+        .pointer("/candidates/0/content/parts")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            let finish = value
+                .pointer("/candidates/0/finishReason")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            format!("response contained no content (finishReason: {finish})")
+        })
 }
 
 fn joined_text(parts: &[Value]) -> String {
-    parts.iter().filter_map(|p| p.get("text").and_then(Value::as_str)).collect()
+    parts
+        .iter()
+        .filter_map(|p| p.get("text").and_then(Value::as_str))
+        .collect()
 }
 
 fn usage(value: &Value) -> Option<super::Usage> {
-    usage_from(value, "/usageMetadata/promptTokenCount", "/usageMetadata/candidatesTokenCount")
+    usage_from(
+        value,
+        "/usageMetadata/promptTokenCount",
+        "/usageMetadata/candidatesTokenCount",
+    )
 }
 
 pub(crate) fn nearest_aspect_ratio(width: u32, height: u32) -> &'static str {
@@ -96,17 +103,14 @@ pub(crate) fn nearest_aspect_ratio(width: u32, height: u32) -> &'static str {
 }
 
 fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> {
-    let mut warnings = Vec::new();
     let mut body = json!({
         "contents": [{"parts": [{"text": r.prompt}]}],
         "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
     });
+    // The closest aspect ratio keeps cropping to a minimum when `imaging` fits the exact size.
     if let Some((w, h)) = r.size {
-        let ratio = nearest_aspect_ratio(w, h);
-        body["generationConfig"]["imageConfig"] = json!({"aspectRatio": ratio});
-        warnings.push(format!(
-            "requested {w}x{h}; Gemini chooses the pixel size itself (aspect ratio {ratio}), automatic resizing is not supported yet"
-        ));
+        body["generationConfig"]["imageConfig"] =
+            json!({"aspectRatio": nearest_aspect_ratio(w, h)});
     }
 
     let value = generate(ctx, &body)?;
@@ -118,14 +122,24 @@ fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> 
             let said = http::truncate(&joined_text(parts), MAX_REFUSAL_CHARS);
             format!("response contained no image; model said: {said}")
         })?;
-    let mime = inline.get("mimeType").and_then(Value::as_str).unwrap_or("image/png").to_string();
+    let mime = inline
+        .get("mimeType")
+        .and_then(Value::as_str)
+        .unwrap_or("image/png")
+        .to_string();
     let encoded = inline
         .get("data")
         .and_then(Value::as_str)
         .ok_or_else(|| "image part had no data".to_string())?;
-    let data = STANDARD.decode(encoded).map_err(|e| format!("invalid base64 image data: {e}"))?;
+    let data = STANDARD
+        .decode(encoded)
+        .map_err(|e| format!("invalid base64 image data: {e}"))?;
 
-    Ok(ProviderOutput { payload: Payload::Bytes { data, mime }, usage: usage(&value), warnings })
+    Ok(ProviderOutput {
+        payload: Payload::Bytes { data, mime },
+        usage: usage(&value),
+        warnings: Vec::new(),
+    })
 }
 
 fn text(ctx: &CallContext, r: &TextRequest) -> Result<ProviderOutput, String> {
@@ -138,7 +152,11 @@ fn text(ctx: &CallContext, r: &TextRequest) -> Result<ProviderOutput, String> {
     if content.is_empty() {
         return Err("response contained no text".into());
     }
-    Ok(ProviderOutput { payload: Payload::Text(content), usage: usage(&value), warnings: Vec::new() })
+    Ok(ProviderOutput {
+        payload: Payload::Text(content),
+        usage: usage(&value),
+        warnings: Vec::new(),
+    })
 }
 
 #[cfg(test)]

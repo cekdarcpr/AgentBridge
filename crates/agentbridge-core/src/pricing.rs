@@ -36,11 +36,19 @@ fn builtin(key: &str) -> Option<PriceEntry> {
         "gemini/gemini-2.5-flash" => Some(entry(None, Some(0.30), Some(2.50))),
         "elevenlabs/sound-generation" => Some(entry(Some(0.03), None, None)),
         "elevenlabs/eleven_multilingual_v2" => Some(entry(Some(0.03), None, None)),
+        "openrouter/google/gemini-2.5-flash-image" => {
+            Some(entry(Some(0.039), Some(0.30), Some(30.0)))
+        }
+        "openrouter/google/gemini-2.5-flash" => Some(entry(None, Some(0.30), Some(2.50))),
         _ => None,
     }
 }
 
-pub fn lookup(overrides: &BTreeMap<String, PriceEntry>, provider: ProviderId, model: &str) -> Option<PriceEntry> {
+pub fn lookup(
+    overrides: &BTreeMap<String, PriceEntry>,
+    provider: ProviderId,
+    model: &str,
+) -> Option<PriceEntry> {
     let key = format!("{provider}/{model}");
     overrides.get(&key).cloned().or_else(|| builtin(&key))
 }
@@ -63,9 +71,14 @@ pub fn estimate(entry: Option<&PriceEntry>, prompt: &str) -> f64 {
 
 /// Returns `(cost, is_estimate)`.
 pub fn actual(entry: Option<&PriceEntry>, usage: Option<&Usage>, estimate: f64) -> (f64, bool) {
+    // A billed amount reported by the provider beats any calculation from list prices.
+    if let Some(billed) = usage.and_then(|u| u.cost_usd) {
+        return (billed, false);
+    }
     if let (Some(entry), Some(usage)) = (entry, usage) {
         if let (Some(input), Some(output)) = (entry.input_per_mtok, entry.output_per_mtok) {
-            let cost = (usage.input_tokens as f64 * input + usage.output_tokens as f64 * output) / TOKENS_PER_MILLION;
+            let cost = (usage.input_tokens as f64 * input + usage.output_tokens as f64 * output)
+                / TOKENS_PER_MILLION;
             return (cost, false);
         }
     }
@@ -79,7 +92,13 @@ mod tests {
     #[test]
     fn override_beats_builtin() {
         let mut overrides = BTreeMap::new();
-        overrides.insert("openai/gpt-image-1".to_string(), PriceEntry { per_call: Some(0.5), ..Default::default() });
+        overrides.insert(
+            "openai/gpt-image-1".to_string(),
+            PriceEntry {
+                per_call: Some(0.5),
+                ..Default::default()
+            },
+        );
         let entry = lookup(&overrides, ProviderId::Openai, "gpt-image-1").unwrap();
         assert_eq!(estimate(Some(&entry), "x"), 0.5);
     }
@@ -93,9 +112,23 @@ mod tests {
     #[test]
     fn token_usage_gives_exact_cost() {
         let entry = lookup(&BTreeMap::new(), ProviderId::Openai, "gpt-image-1").unwrap();
-        let usage = Usage { input_tokens: 100, output_tokens: 1056 };
+        let usage = Usage {
+            input_tokens: 100,
+            output_tokens: 1056,
+            cost_usd: None,
+        };
         let (cost, is_estimate) = actual(Some(&entry), Some(&usage), 0.042);
         assert!(!is_estimate);
         assert!((cost - 0.04274).abs() < 1e-9);
+    }
+
+    #[test]
+    fn provider_billed_cost_wins() {
+        let usage = Usage {
+            input_tokens: 10,
+            output_tokens: 10,
+            cost_usd: Some(0.0123),
+        };
+        assert_eq!(actual(None, Some(&usage), 0.5), (0.0123, false));
     }
 }

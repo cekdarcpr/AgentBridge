@@ -22,8 +22,9 @@ impl Paths {
                 db_file: home.join("agentbridge.db"),
             });
         }
-        let dirs = ProjectDirs::from("", "", "agentbridge")
-            .ok_or_else(|| AppError::Internal("could not determine the user's home directory".into()))?;
+        let dirs = ProjectDirs::from("", "", "agentbridge").ok_or_else(|| {
+            AppError::Internal("could not determine the user's home directory".into())
+        })?;
         Ok(Self {
             config_file: dirs.config_dir().join("config.toml"),
             db_file: dirs.data_local_dir().join("agentbridge.db"),

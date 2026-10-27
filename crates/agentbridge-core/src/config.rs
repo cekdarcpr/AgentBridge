@@ -57,7 +57,8 @@ impl Config {
     }
 
     pub fn to_toml(&self) -> Result<String, AppError> {
-        toml::to_string_pretty(self).map_err(|e| AppError::Internal(format!("could not serialize config: {e}")))
+        toml::to_string_pretty(self)
+            .map_err(|e| AppError::Internal(format!("could not serialize config: {e}")))
     }
 
     fn validate(&self) -> Result<(), AppError> {
@@ -68,11 +69,15 @@ impl Config {
         ];
         for (name, value) in limits {
             if !value.is_finite() || value < 0.0 {
-                return Err(AppError::Config(format!("limits.{name} must be a non-negative number")));
+                return Err(AppError::Config(format!(
+                    "limits.{name} must be a non-negative number"
+                )));
             }
         }
         if self.http_timeout_secs == 0 {
-            return Err(AppError::Config("http_timeout_secs must be greater than zero".into()));
+            return Err(AppError::Config(
+                "http_timeout_secs must be greater than zero".into(),
+            ));
         }
         for capability in Capability::ALL {
             let order = self.routing.for_capability(capability);
@@ -83,7 +88,9 @@ impl Config {
                     )));
                 }
                 if order[..index].contains(provider) {
-                    return Err(AppError::Config(format!("routing.{capability}: {provider} is listed twice")));
+                    return Err(AppError::Config(format!(
+                        "routing.{capability}: {provider} is listed twice"
+                    )));
                 }
             }
         }
@@ -104,10 +111,18 @@ pub struct Routing {
 impl Default for Routing {
     fn default() -> Self {
         Self {
-            image: vec![ProviderId::Openai, ProviderId::Gemini],
+            image: vec![
+                ProviderId::Openai,
+                ProviderId::Gemini,
+                ProviderId::Openrouter,
+            ],
             audio: vec![ProviderId::Elevenlabs],
             speech: vec![ProviderId::Elevenlabs, ProviderId::Openai],
-            text: vec![ProviderId::Gemini, ProviderId::Openai],
+            text: vec![
+                ProviderId::Gemini,
+                ProviderId::Openai,
+                ProviderId::Openrouter,
+            ],
         }
     }
 }
@@ -154,6 +169,8 @@ pub struct Models {
     pub elevenlabs_voice: String,
     /// `pcm_*` rate requested for `.wav` output; higher rates may need a paid ElevenLabs tier.
     pub elevenlabs_wav_sample_rate: u32,
+    pub openrouter_image: String,
+    pub openrouter_text: String,
 }
 
 /// ElevenLabs' sound-effect endpoint has no model parameter; this name only labels logs and prices.
@@ -171,6 +188,8 @@ impl Default for Models {
             elevenlabs_speech: "eleven_multilingual_v2".into(),
             elevenlabs_voice: "21m00Tcm4TlvDq8ikWAM".into(),
             elevenlabs_wav_sample_rate: 44_100,
+            openrouter_image: "google/gemini-2.5-flash-image".into(),
+            openrouter_text: "google/gemini-2.5-flash".into(),
         }
     }
 }
@@ -184,7 +203,11 @@ impl Models {
             (ProviderId::Gemini, Capability::Image) => &self.gemini_image,
             (ProviderId::Gemini, Capability::Text) => &self.gemini_text,
             (ProviderId::Elevenlabs, Capability::Speech) => &self.elevenlabs_speech,
-            (ProviderId::Elevenlabs, Capability::Audio) => return Some(ELEVENLABS_SFX_MODEL.into()),
+            (ProviderId::Openrouter, Capability::Image) => &self.openrouter_image,
+            (ProviderId::Openrouter, Capability::Text) => &self.openrouter_text,
+            (ProviderId::Elevenlabs, Capability::Audio) => {
+                return Some(ELEVENLABS_SFX_MODEL.into())
+            }
             _ => return None,
         };
         Some(model.clone())

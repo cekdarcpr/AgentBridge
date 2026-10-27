@@ -6,6 +6,8 @@ pub mod capability;
 pub mod config;
 pub mod engine;
 pub mod error;
+pub mod icons;
+pub mod imaging;
 pub mod keystore;
 pub mod paths;
 pub mod pricing;
@@ -18,6 +20,7 @@ pub use capability::{Capability, ProviderId};
 pub use config::Config;
 pub use engine::{Attempt, AttemptStatus, Engine, RunFailure, RunOptions, RunResult};
 pub use error::AppError;
+pub use imaging::Fit;
 pub use paths::Paths;
 pub use request::{
     parse_size, AudioFormat, AudioRequest, ImageFormat, ImageRequest, Request, SpeechRequest,

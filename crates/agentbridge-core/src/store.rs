@@ -79,7 +79,8 @@ pub struct ProviderUsage {
     pub cost_usd: f64,
 }
 
-const CALL_COLUMNS: &str = "id, created_at, project, capability, provider, model, prompt, output_path, status,
+const CALL_COLUMNS: &str =
+    "id, created_at, project, capability, provider, model, prompt, output_path, status,
     estimated_usd, cost_usd, cost_is_estimate, error, duration_ms";
 
 pub struct Store {
@@ -117,8 +118,12 @@ impl Store {
 
         let now = Utc::now();
         let day = today();
-        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let stale_cutoff = (now - Duration::minutes(STALE_PENDING_MINUTES)).format(TIMESTAMP_FORMAT).to_string();
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let stale_cutoff = (now - Duration::minutes(STALE_PENDING_MINUTES))
+            .format(TIMESTAMP_FORMAT)
+            .to_string();
         tx.execute(
             "UPDATE calls SET status = 'abandoned', cost_usd = 0 WHERE status = 'pending' AND created_at < ?1",
             params![stale_cutoff],
@@ -209,10 +214,17 @@ impl Store {
 
     pub fn get(&self, id: i64) -> Result<Option<CallRecord>, AppError> {
         let sql = format!("SELECT {CALL_COLUMNS} FROM calls WHERE id = ?1");
-        Ok(self.conn.query_row(&sql, params![id], call_record).optional()?)
+        Ok(self
+            .conn
+            .query_row(&sql, params![id], call_record)
+            .optional()?)
     }
 
-    pub fn usage_by_day(&self, days: u32, project: Option<&str>) -> Result<Vec<DayUsage>, AppError> {
+    pub fn usage_by_day(
+        &self,
+        days: u32,
+        project: Option<&str>,
+    ) -> Result<Vec<DayUsage>, AppError> {
         let sql = format!(
             "SELECT day, COUNT(*), {SPENT_EXPR} FROM calls
              WHERE day >= ?1 AND (?2 IS NULL OR project = ?2)
@@ -220,7 +232,11 @@ impl Store {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![first_day(days), project], |row| {
-            Ok(DayUsage { day: row.get(0)?, calls: row.get(1)?, cost_usd: row.get(2)? })
+            Ok(DayUsage {
+                day: row.get(0)?,
+                calls: row.get(1)?,
+                cost_usd: row.get(2)?,
+            })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -233,7 +249,11 @@ impl Store {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![first_day(days)], |row| {
-            Ok(ProviderUsage { provider: row.get(0)?, calls: row.get(1)?, cost_usd: row.get(2)? })
+            Ok(ProviderUsage {
+                provider: row.get(0)?,
+                calls: row.get(1)?,
+                cost_usd: row.get(2)?,
+            })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -250,7 +270,8 @@ fn first_day(days: u32) -> String {
 }
 
 fn spent(conn: &Connection, day: &str, project: Option<&str>) -> Result<f64, AppError> {
-    let sql = format!("SELECT {SPENT_EXPR} FROM calls WHERE day = ?1 AND (?2 IS NULL OR project = ?2)");
+    let sql =
+        format!("SELECT {SPENT_EXPR} FROM calls WHERE day = ?1 AND (?2 IS NULL OR project = ?2)");
     Ok(conn.query_row(&sql, params![day, project], |row| row.get(0))?)
 }
 
@@ -278,11 +299,22 @@ mod tests {
     use super::*;
 
     fn call(project: &str, estimated_usd: f64) -> NewCall<'_> {
-        NewCall { project, capability: "image", provider: "openai", model: "m", prompt: "p", estimated_usd }
+        NewCall {
+            project,
+            capability: "image",
+            provider: "openai",
+            model: "m",
+            prompt: "p",
+            estimated_usd,
+        }
     }
 
     fn limits(daily: f64, project: f64, per_call: f64) -> Limits {
-        Limits { daily_usd: daily, project_daily_usd: project, max_call_usd: per_call }
+        Limits {
+            daily_usd: daily,
+            project_daily_usd: project,
+            max_call_usd: per_call,
+        }
     }
 
     #[test]
@@ -315,15 +347,21 @@ mod tests {
     #[test]
     fn per_call_limit_rejects_before_writing() {
         let mut store = Store::open_in_memory().unwrap();
-        assert!(store.reserve(&call("a", 2.0), &limits(10.0, 10.0, 1.0)).is_err());
+        assert!(store
+            .reserve(&call("a", 2.0), &limits(10.0, 10.0, 1.0))
+            .is_err());
         assert!(store.recent(10).unwrap().is_empty());
     }
 
     #[test]
     fn success_uses_actual_cost() {
         let mut store = Store::open_in_memory().unwrap();
-        let id = store.reserve(&call("a", 0.5), &limits(10.0, 10.0, 1.0)).unwrap();
-        store.finish_success(id, 0.1, false, Some("out.png"), 5).unwrap();
+        let id = store
+            .reserve(&call("a", 0.5), &limits(10.0, 10.0, 1.0))
+            .unwrap();
+        store
+            .finish_success(id, 0.1, false, Some("out.png"), 5)
+            .unwrap();
         assert!((store.spent_today(Some("a")).unwrap() - 0.1).abs() < 1e-9);
         let usage = store.usage_by_day(7, None).unwrap();
         assert_eq!(usage.len(), 1);
@@ -338,14 +376,19 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let limits = limits(10.0, 10.0, 1.0);
         let ok = store.reserve(&call("a", 0.1), &limits).unwrap();
-        store.finish_success(ok, 0.1, true, Some("a.png"), 5).unwrap();
+        store
+            .finish_success(ok, 0.1, true, Some("a.png"), 5)
+            .unwrap();
         let failed = store.reserve(&call("a", 0.1), &limits).unwrap();
         store.finish_failure(failed, "boom", 5).unwrap();
 
         let assets = store.assets(10).unwrap();
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0].id, ok);
-        assert_eq!(store.get(ok).unwrap().unwrap().output_path.as_deref(), Some("a.png"));
+        assert_eq!(
+            store.get(ok).unwrap().unwrap().output_path.as_deref(),
+            Some("a.png")
+        );
         assert!(store.get(9_999).unwrap().is_none());
     }
 }

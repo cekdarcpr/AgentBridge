@@ -32,7 +32,8 @@ impl Provider for ElevenLabs {
     }
 
     fn verify_request(&self, http: &Client, api_key: &str) -> RequestBuilder {
-        http.get(format!("{BASE_URL}/models")).header("xi-api-key", api_key)
+        http.get(format!("{BASE_URL}/models"))
+            .header("xi-api-key", api_key)
     }
 }
 
@@ -54,7 +55,12 @@ fn speech(ctx: &CallContext, r: &SpeechRequest) -> Result<ProviderOutput, String
     post_audio(ctx, &format!("/text-to-speech/{voice}"), &body, r.format)
 }
 
-fn post_audio(ctx: &CallContext, path: &str, body: &Value, format: AudioFormat) -> Result<ProviderOutput, String> {
+fn post_audio(
+    ctx: &CallContext,
+    path: &str,
+    body: &Value,
+    format: AudioFormat,
+) -> Result<ProviderOutput, String> {
     let sample_rate = ctx.models.elevenlabs_wav_sample_rate;
     // ElevenLabs has no WAV output; raw PCM is requested and wrapped locally.
     let output_format = match format {
@@ -74,7 +80,10 @@ fn post_audio(ctx: &CallContext, path: &str, body: &Value, format: AudioFormat) 
         AudioFormat::Wav => audio::pcm16_mono_to_wav(&bytes, sample_rate),
     };
     Ok(ProviderOutput {
-        payload: Payload::Bytes { data, mime: format.mime().into() },
+        payload: Payload::Bytes {
+            data,
+            mime: format.mime().into(),
+        },
         usage: None,
         warnings: Vec::new(),
     })
