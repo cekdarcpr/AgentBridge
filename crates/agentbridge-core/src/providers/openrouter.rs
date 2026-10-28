@@ -7,14 +7,17 @@ use super::{
     ProviderOutput, Usage,
 };
 use crate::{
+    audio,
     capability::{Capability, ProviderId},
-    request::{ImageRequest, Request, TextRequest},
+    request::{AudioFormat, ImageRequest, Request, SpeechRequest, TextRequest},
 };
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1";
 /// Optional attribution headers OpenRouter uses to show which app sent the traffic.
 const APP_URL: &str = "https://github.com/cekdarcpr/AgentBridge";
 const APP_TITLE: &str = "agentBridge";
+/// Rate assumed for raw PCM when the response does not state one; most TTS models use 24 kHz.
+const DEFAULT_PCM_RATE: u32 = 24_000;
 /// Prefix of the error http::ensure_success builds for a rejected request.
 const BAD_REQUEST: &str = "HTTP 400:";
 
@@ -27,15 +30,18 @@ impl Provider for OpenRouter {
     }
 
     fn supports(&self, capability: Capability) -> bool {
-        matches!(capability, Capability::Image | Capability::Text)
+        matches!(
+            capability,
+            Capability::Image | Capability::Speech | Capability::Text
+        )
     }
 
     fn execute(&self, ctx: &CallContext, request: &Request) -> Result<ProviderOutput, String> {
         match request {
             Request::Image(r) => image(ctx, r),
             Request::Text(r) => text(ctx, r),
+            Request::Speech(r) => speech(ctx, r),
             Request::Audio(_) => Err(unsupported(self.id(), Capability::Audio)),
-            Request::Speech(_) => Err(unsupported(self.id(), Capability::Speech)),
         }
     }
 
@@ -89,6 +95,10 @@ fn message_text(value: &Value) -> String {
 
 fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> {
     let mut body = json!({"model": ctx.model, "prompt": r.prompt});
+    if let Some(reference) = &r.reference {
+        body["input_references"] =
+            json!([{"type": "image_url", "image_url": {"url": reference.data_url()}}]);
+    }
     // The closest aspect ratio keeps cropping to a minimum when `imaging` fits the exact size.
     if let Some((w, h)) = r.size {
         body["aspect_ratio"] = json!(nearest_aspect_ratio(w, h));
@@ -146,12 +156,77 @@ fn decode_image(value: &Value, model: &str) -> Result<Vec<u8>, String> {
         .decode(encoded)
         .map_err(|e| format!("invalid base64 image data: {e}"))
 }
+/// OpenAI-compatible speech endpoint; it serves every TTS model on OpenRouter.
+fn speech(ctx: &CallContext, r: &SpeechRequest) -> Result<ProviderOutput, String> {
+    let response_format = match r.format {
+        AudioFormat::Mp3 => "mp3",
+        AudioFormat::Wav => "pcm",
+    };
+    let body = json!({
+        "model": ctx.model,
+        "input": r.text,
+        "voice": r.voice.as_deref().unwrap_or(&ctx.models.openrouter_voice),
+        "response_format": response_format,
+    });
+    let response = ctx
+        .http
+        .post(format!("{BASE_URL}/audio/speech"))
+        .bearer_auth(ctx.api_key)
+        .header("HTTP-Referer", APP_URL)
+        .header("X-Title", APP_TITLE)
+        .json(&body)
+        .send()
+        .map_err(http::network_error)?;
+    let response = http::ensure_success(response)?;
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    };
+    let content_type = header("content-type").unwrap_or_default();
+    let generation_id = header("x-generation-id");
+    let bytes = http::read_bytes(response)?;
+    let data = match r.format {
+        AudioFormat::Mp3 => bytes,
+        AudioFormat::Wav => audio::ensure_wav(bytes, DEFAULT_PCM_RATE, &content_type),
+    };
+    // Speech responses carry no usage; the billed amount is looked up by generation id instead.
+    let cost_usd = generation_id.and_then(|id| generation_cost(ctx, &id));
+    Ok(ProviderOutput {
+        payload: Payload::Bytes {
+            data,
+            mime: r.format.mime().into(),
+        },
+        usage: cost_usd.map(|cost| Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: Some(cost),
+        }),
+        warnings: Vec::new(),
+    })
+}
+
+/// Best effort: stats can lag behind the response, and an estimate is recorded when they do.
+fn generation_cost(ctx: &CallContext, id: &str) -> Option<f64> {
+    let response = ctx
+        .http
+        .get(format!("{BASE_URL}/generation"))
+        .query(&[("id", id)])
+        .bearer_auth(ctx.api_key)
+        .send()
+        .ok()?;
+    let value = http::read_json(http::ensure_success(response).ok()?).ok()?;
+    value.pointer("/data/total_cost").and_then(Value::as_f64)
+}
+
 fn text(ctx: &CallContext, r: &TextRequest) -> Result<ProviderOutput, String> {
     let mut messages = Vec::new();
     if let Some(system) = &r.system {
         messages.push(json!({"role": "system", "content": system}));
     }
-    messages.push(json!({"role": "user", "content": r.prompt}));
+    messages.push(json!({"role": "user", "content": r.full_prompt()}));
     let value = chat(ctx, json!({"model": ctx.model, "messages": messages}))?;
     let content = message_text(&value);
     if content.is_empty() {

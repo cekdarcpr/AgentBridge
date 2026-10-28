@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+
 use crate::{
     capability::Capability,
     error::AppError,
@@ -96,6 +98,24 @@ pub struct ImageRequest {
     /// `None` picks a default from `transparent` (see `Fit::default_for`).
     pub fit: Option<Fit>,
     pub trim: bool,
+    /// Style reference sent along with the prompt (see `style`).
+    pub reference: Option<Reference>,
+}
+
+/// An image the provider should match in style, already downscaled and encoded as PNG.
+#[derive(Debug, Clone)]
+pub struct Reference {
+    pub png: Vec<u8>,
+}
+
+impl Reference {
+    pub fn data_url(&self) -> String {
+        format!("data:image/png;base64,{}", STANDARD.encode(&self.png))
+    }
+
+    pub fn base64(&self) -> String {
+        STANDARD.encode(&self.png)
+    }
 }
 
 impl ImageRequest {
@@ -123,6 +143,28 @@ pub struct SpeechRequest {
 pub struct TextRequest {
     pub prompt: String,
     pub system: Option<String>,
+    /// Sent to the model but kept out of the call log, since files can hold secrets.
+    pub files: Vec<Attachment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    pub name: String,
+    pub content: String,
+}
+
+impl TextRequest {
+    /// The prompt as sent to the model, with the attached files appended.
+    pub fn full_prompt(&self) -> String {
+        let mut combined = self.prompt.clone();
+        for file in &self.files {
+            combined.push_str(&format!(
+                "\n\n--- file: {} ---\n{}",
+                file.name, file.content
+            ));
+        }
+        combined
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +191,14 @@ impl Request {
             Self::Audio(r) => &r.prompt,
             Self::Speech(r) => &r.text,
             Self::Text(r) => &r.prompt,
+        }
+    }
+
+    /// Everything the provider receives as input, which is what it charges for.
+    pub fn full_prompt(&self) -> String {
+        match self {
+            Self::Text(r) => r.full_prompt(),
+            other => other.prompt().to_string(),
         }
     }
 
@@ -236,5 +286,26 @@ mod tests {
             AudioFormat::Wav
         );
         assert!(ImageFormat::from_path(Path::new("x.gif")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+
+    #[test]
+    fn files_are_sent_but_not_logged() {
+        let request = Request::Text(TextRequest {
+            prompt: "summarize".into(),
+            system: None,
+            files: vec![Attachment {
+                name: ".env".into(),
+                content: "TOKEN=abc".into(),
+            }],
+        });
+        assert_eq!(request.prompt(), "summarize");
+        assert!(request
+            .full_prompt()
+            .ends_with("--- file: .env ---\nTOKEN=abc"));
     }
 }

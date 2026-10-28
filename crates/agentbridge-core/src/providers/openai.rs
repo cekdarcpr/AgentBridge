@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::blocking::{Client, RequestBuilder, Response};
 use serde_json::{json, Value};
@@ -60,6 +62,57 @@ fn post(ctx: &CallContext, path: &str, body: &Value) -> Result<Response, String>
     http::ensure_success(response)
 }
 
+fn post_multipart(
+    ctx: &CallContext,
+    path: &str,
+    fields: &Value,
+    png: &[u8],
+) -> Result<Response, String> {
+    let (boundary, body) = multipart_body(fields, png);
+    let response = ctx
+        .http
+        .post(format!("{BASE_URL}{path}"))
+        .bearer_auth(ctx.api_key)
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .map_err(http::network_error)?;
+    http::ensure_success(response)
+}
+
+/// Builds the form by hand: one PNG plus plain fields is all the edits endpoint needs, which does
+/// not justify another HTTP feature or crate.
+fn multipart_body(fields: &Value, png: &[u8]) -> (String, Vec<u8>) {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let boundary = format!("agentbridge-{nanos:x}");
+    let mut body = Vec::new();
+    for (name, value) in fields.as_object().into_iter().flatten() {
+        let text = value
+            .as_str()
+            .map_or_else(|| value.to_string(), str::to_string);
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{text}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"image[]\"; filename=\"reference.png\"\r\nContent-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(png);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, body)
+}
+
 pub(crate) fn pick_size(requested: Option<(u32, u32)>) -> (u32, u32) {
     let Some((w, h)) = requested else {
         return SQUARE;
@@ -89,7 +142,12 @@ fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> 
         body["background"] = json!("transparent");
     }
 
-    let value = http::read_json(post(ctx, "/images/generations", &body)?)?;
+    let response = match &r.reference {
+        // A reference image is only accepted by the edits endpoint, which takes multipart form data.
+        Some(reference) => post_multipart(ctx, "/images/edits", &body, &reference.png)?,
+        None => post(ctx, "/images/generations", &body)?,
+    };
+    let value = http::read_json(response)?;
     let encoded = value
         .pointer("/data/0/b64_json")
         .and_then(Value::as_str)
@@ -131,7 +189,7 @@ fn text(ctx: &CallContext, r: &TextRequest) -> Result<ProviderOutput, String> {
     if let Some(system) = &r.system {
         messages.push(json!({"role": "system", "content": system}));
     }
-    messages.push(json!({"role": "user", "content": r.prompt}));
+    messages.push(json!({"role": "user", "content": r.full_prompt()}));
     let body = json!({"model": ctx.model, "messages": messages});
 
     let value = http::read_json(post(ctx, "/chat/completions", &body)?)?;
@@ -157,5 +215,16 @@ mod tests {
         assert_eq!(pick_size(Some((64, 64))), SQUARE);
         assert_eq!(pick_size(Some((1920, 1080))), LANDSCAPE);
         assert_eq!(pick_size(Some((1080, 1920))), PORTRAIT);
+    }
+
+    #[test]
+    fn builds_multipart_form() {
+        let (boundary, body) = multipart_body(&json!({"prompt": "a cat", "n": 1}), b"PNGDATA");
+        let text = String::from_utf8_lossy(&body);
+        assert!(text.contains("name=\"prompt\"\r\n\r\na cat\r\n"));
+        assert!(text.contains("name=\"n\"\r\n\r\n1\r\n"));
+        assert!(text
+            .contains("filename=\"reference.png\"\r\nContent-Type: image/png\r\n\r\nPNGDATA\r\n"));
+        assert!(text.ends_with(&format!("--{boundary}--\r\n")));
     }
 }

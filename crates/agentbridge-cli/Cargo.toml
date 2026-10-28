@@ -3,6 +3,8 @@ name = "agentbridge-cli"
 description = "agb: the agentBridge command-line interface, designed to be called by coding agents"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "agb"

@@ -30,9 +30,37 @@ pub fn pcm16_mono_to_wav(pcm: &[u8], sample_rate: u32) -> Vec<u8> {
     out
 }
 
+/// Sample rate of raw PCM as providers label it, e.g. `audio/L16;codec=pcm;rate=24000`.
+pub fn pcm_rate(mime: &str) -> Option<u32> {
+    mime.split(';')
+        .filter_map(|param| param.trim().strip_prefix("rate="))
+        .find_map(|rate| rate.trim().parse().ok())
+}
+
+/// Speech providers return either a finished WAV file or raw 16-bit mono PCM; both become WAV.
+pub fn ensure_wav(bytes: Vec<u8>, default_rate: u32, mime: &str) -> Vec<u8> {
+    if bytes.starts_with(b"RIFF") {
+        return bytes;
+    }
+    pcm16_mono_to_wav(&bytes, pcm_rate(mime).unwrap_or(default_rate))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_pcm_rate_and_keeps_existing_wav() {
+        assert_eq!(pcm_rate("audio/L16;codec=pcm;rate=24000"), Some(24_000));
+        assert_eq!(pcm_rate("audio/pcm"), None);
+        let wav = pcm16_mono_to_wav(&[0u8; 4], 8_000);
+        assert_eq!(ensure_wav(wav.clone(), 24_000, "audio/wav"), wav);
+        let wrapped = ensure_wav(vec![0u8; 4], 24_000, "audio/pcm; rate=16000");
+        assert_eq!(
+            u32::from_le_bytes(wrapped[24..28].try_into().unwrap()),
+            16_000
+        );
+    }
 
     #[test]
     fn builds_valid_header() {

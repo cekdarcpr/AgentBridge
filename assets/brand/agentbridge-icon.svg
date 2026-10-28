@@ -1,22 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="ab-bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7C5CFA"/>
-      <stop offset="0.5" stop-color="#5B5BF6"/>
-      <stop offset="1" stop-color="#2E8BFF"/>
-    </linearGradient>
-    <radialGradient id="ab-shine" cx="0.28" cy="0.12" r="0.85">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#ab-bg)"/>
-  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#ab-shine)"/>
-  <!-- Spark: generative AI -->
-  <path d="M512 196 Q532 280 616 300 Q532 320 512 404 Q492 320 408 300 Q492 280 512 196Z" fill="#FFFFFF"/>
-  <!-- Bridge: the arch between the agent and the providers -->
-  <path d="M150 720H874" fill="none" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="44" stroke-linecap="round"/>
-  <path d="M262 720 A250 250 0 0 1 762 720" fill="none" stroke="#FFFFFF" stroke-width="76" stroke-linecap="round"/>
-  <circle cx="262" cy="720" r="84" fill="#FFFFFF"/>
-  <circle cx="762" cy="720" r="84" fill="#FFFFFF"/>
+  <!-- A command prompt that ends in a finished block: an agent asks, a ready asset comes out. -->
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="#5B5BF6"/>
+  <g transform="translate(512 512) scale(0.7) translate(-512 -512)">
+    <path d="M261 285 L481 505 L261 725" fill="none" stroke="#FFFFFF" stroke-width="116" stroke-linecap="round" stroke-linejoin="round"/><rect x="589" y="565" width="232" height="232" rx="56" fill="#FFFFFF"/>
+  </g>
 </svg>

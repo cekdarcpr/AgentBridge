@@ -3,6 +3,8 @@ name = "agentbridge-core"
 description = "Provider routing, key storage, budgets and call logging for AgentBridge"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 base64.workspace = true

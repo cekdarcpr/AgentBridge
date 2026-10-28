@@ -92,6 +92,9 @@ enum Command {
         trim: bool,
         #[arg(long, value_enum)]
         quality: Option<Quality>,
+        /// Ignore the project style in agentbridge.toml for this image
+        #[arg(long)]
+        no_style: bool,
         #[command(flatten)]
         gen: GenOptions,
     },
@@ -112,6 +115,9 @@ enum Command {
         /// Transparent background around the generated icon
         #[arg(long, conflicts_with = "from")]
         transparent: bool,
+        /// Ignore the project style in agentbridge.toml for the generated icon
+        #[arg(long, conflicts_with = "from")]
+        no_style: bool,
         #[command(flatten)]
         gen: GenOptions,
     },
@@ -174,6 +180,11 @@ enum Command {
         #[command(flatten)]
         gen: GenOptions,
     },
+    /// Show or create the project style that keeps generated images consistent
+    Style {
+        #[command(subcommand)]
+        action: StyleAction,
+    },
     /// Manage API keys in the OS keychain
     Keys {
         #[command(subcommand)]
@@ -218,6 +229,18 @@ enum KeysAction {
     Test {
         #[arg(value_parser = parse_provider)]
         provider: ProviderId,
+    },
+}
+
+#[derive(Subcommand)]
+enum StyleAction {
+    /// Print the style that applies in the current directory
+    Show,
+    /// Write an agentbridge.toml with an example style at the project root
+    Init {
+        /// Replace an existing agentbridge.toml
+        #[arg(long)]
+        force: bool,
     },
 }
 

@@ -22,7 +22,8 @@
 ---
 
 ```bash
-agb image "pixel art sword, flat colors" --out assets/sword.png --size 64x64 --transparent --trim
+agb style init
+agb image "pixel art sword" --out assets/sword.png --size 64x64 --transparent --trim
 agb icon-set "a friendly rocket" --out-dir public --preset web
 agb audio "short metallic UI click" --out assets/click.wav --duration 0.5
 ```
@@ -42,6 +43,7 @@ project needs:
 | A transparent background | A white or colored background |
 | A `.webp` or `.jpg` file | Whatever format the model produces |
 | A favicon set: `.ico`, 16, 32, 180, 192 and 512 px, a manifest | One image |
+| Assets that look like they belong together | A different style on every call |
 | Assets in a consistent place, at a known cost | A URL or base64 blob and a surprise bill |
 
 ## What agentBridge does
@@ -51,10 +53,12 @@ your project**:
 
 1. **Generates** the content with the provider you prefer: OpenAI, Google Gemini, ElevenLabs or any of
    the hundreds of models on OpenRouter.
-2. **Finishes** it locally: exact size, the format your file name asks for, a transparent background
+2. **Keeps one look**: the project's style profile (description, palette, things to avoid and a
+   reference image) is applied to every image, whichever agent asks for it.
+3. **Finishes** it locally: exact size, the format your file name asks for, a transparent background
    with any provider, trimmed margins, complete icon sets.
-3. **Saves** it at the path you gave and reports the result as JSON the agent can act on.
-4. **Guards** your wallet: daily, per-project and per-call limits are checked before anything is sent,
+4. **Saves** it at the path you gave and reports the result as JSON the agent can act on.
+5. **Guards** your wallet: daily, per-project and per-call limits are checked before anything is sent,
    and every call is logged with its cost.
 
 The agent only needs to know what it wants. Which provider makes it, how it is resized and whether the
@@ -73,6 +77,7 @@ OpenRouter is one of agentBridge's providers.
 |---|---|
 | **Exact sizes** | `--size 64x64` gives exactly 64×64 pixels, cropped or padded the way you choose with `--fit`. |
 | **Transparency everywhere** | `--transparent` works with every image provider, not only those that support it natively. |
+| **One look per project** | A style profile in `agentbridge.toml` is applied to every image and its reference image is sent to the provider, so assets made by different agents on different days still match. |
 | **Icon sets** | `agb icon-set` writes a complete favicon or app icon set, including `.ico` files, a web manifest and the HTML tags. |
 | **Free local processing** | `agb process` resizes, converts, trims or removes the background of images you already have. |
 | **Any format** | The output file name decides the format: `.png`, `.jpg`, `.webp`, `.mp3` or `.wav`. |
@@ -103,6 +108,12 @@ agb image "pixel art sword icon" --out assets/sword.png --size 64x64 --transpare
 agb image "pixel art sword icon" --out assets/sword.png --size 64x64 --transparent
 ```
 
+To give every image in the project the same look, create a style profile and edit it:
+
+```bash
+agb style init
+```
+
 Then teach your agent to use it by pasting [`docs/agent-instructions.md`](docs/agent-instructions.md)
 into your project's `CLAUDE.md` or `AGENTS.md`. From then on, a request like *"add a sword icon and a
 click sound to the inventory screen"* is enough.
@@ -130,34 +141,24 @@ Read more in [How it works](docs/concepts.md).
 | Provider | Images | Sound effects | Speech | Text |
 |---|:---:|:---:|:---:|:---:|
 | [OpenAI](https://platform.openai.com/api-keys) | ✓ | | ✓ | ✓ |
-| [Google Gemini](https://aistudio.google.com/apikey) | ✓ | | | ✓ |
+| [Google Gemini](https://aistudio.google.com/apikey) | ✓ | | ✓ | ✓ |
 | [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) | | ✓ | ✓ | |
-| [OpenRouter](https://openrouter.ai/settings/keys) | ✓ | | | ✓ |
+| [OpenRouter](https://openrouter.ai/settings/keys) | ✓ | | ✓ | ✓ |
 
-One key is enough to start. Add more for choice and fallback. Default models and the order in which
-providers are tried are listed in [Configuration](docs/configuration.md).
+One key is enough to start: an OpenRouter key alone covers images, speech and text. Add more for
+choice and fallback. Sound effects need ElevenLabs, the only provider with a sound effect API. Default
+models and the order in which providers are tried are listed in [Configuration](docs/configuration.md).
 
 ## Documentation
 
 | Page | What you will find |
 |---|---|
 | [Getting started](docs/getting-started.md) | Install, add keys, make a first asset and connect your agent, step by step. |
-| [Guide](docs/guide.md) | Recipes: game sprites, UI icons, favicons, app icons, banners, sounds, voice lines. |
-| [How it works](docs/concepts.md) | Routing and fallback, the asset pipeline, transparency, budgets and privacy. |
+| [Guide](docs/guide.md) | Recipes: a project style, game sprites, UI icons, favicons, app icons, banners, sounds, voice lines. |
+| [How it works](docs/concepts.md) | Routing and fallback, the asset pipeline, transparency, consistent style, budgets and privacy. |
 | [Commands](docs/commands.md) | Every command and option, the JSON output and the error codes. |
-| [Configuration](docs/configuration.md) | Routing, default models, limits, prices and environment variables. |
+| [Configuration](docs/configuration.md) | Routing, default models and voices, the project style, limits, prices and environment variables. |
 | [Agent instructions](docs/agent-instructions.md) | The text to paste into `CLAUDE.md` or `AGENTS.md`. |
-
-## Roadmap
-
-- [x] Exact sizes, format conversion, transparency with any provider, icon sets (v0.2)
-- [x] OpenRouter provider (v0.2)
-- [ ] Project style profiles, so every asset in a project shares one look
-- [ ] Asset manifest with `agb regen` and `agb variants`
-- [ ] MCP server mode for agents that support the Model Context Protocol
-- [ ] Response cache and quality tiers (`--tier draft|final`)
-- [ ] Local models (ComfyUI, local text-to-speech) for offline, zero-cost generation
-- [ ] Prebuilt binaries for Windows, macOS and Linux
 
 ## Development
 
@@ -172,8 +173,21 @@ pipeline.
 
 | Crate | Contents |
 |---|---|
-| [`crates/agentbridge-core`](crates/agentbridge-core) | Providers, routing, image processing, icon sets, budgets, keychain and the call log |
+| [`crates/agentbridge-core`](crates/agentbridge-core) | Providers, routing, image processing, icon sets, style profiles, budgets, keychain and the call log |
 | [`crates/agentbridge-cli`](crates/agentbridge-cli) | The `agb` command-line interface |
 
 agentBridge is developed and tested on Windows. macOS and Linux are supported by the code but not yet
 tested; reports are welcome. Issues and pull requests are welcome too.
+
+## License
+
+Licensed under either of
+
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT License](LICENSE-MIT)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work
+by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional
+terms or conditions.

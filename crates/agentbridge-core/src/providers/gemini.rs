@@ -4,12 +4,15 @@ use serde_json::{json, Value};
 
 use super::{http, unsupported, usage_from, CallContext, Payload, Provider, ProviderOutput};
 use crate::{
+    audio,
     capability::{Capability, ProviderId},
-    request::{ImageRequest, Request, TextRequest},
+    request::{AudioFormat, ImageRequest, Request, SpeechRequest, TextRequest},
 };
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 const MAX_REFUSAL_CHARS: usize = 300;
+/// Gemini TTS returns 24 kHz mono 16-bit audio; used when the response does not name a rate.
+const TTS_SAMPLE_RATE: u32 = 24_000;
 /// Aspect ratios accepted by `generationConfig.imageConfig.aspectRatio`.
 const ASPECT_RATIOS: [(&str, f64); 10] = [
     ("1:1", 1.0),
@@ -32,15 +35,18 @@ impl Provider for Gemini {
     }
 
     fn supports(&self, capability: Capability) -> bool {
-        matches!(capability, Capability::Image | Capability::Text)
+        matches!(
+            capability,
+            Capability::Image | Capability::Speech | Capability::Text
+        )
     }
 
     fn execute(&self, ctx: &CallContext, request: &Request) -> Result<ProviderOutput, String> {
         match request {
             Request::Image(r) => image(ctx, r),
             Request::Text(r) => text(ctx, r),
+            Request::Speech(r) => speech(ctx, r),
             Request::Audio(_) => Err(unsupported(self.id(), Capability::Audio)),
-            Request::Speech(_) => Err(unsupported(self.id(), Capability::Speech)),
         }
     }
 
@@ -103,8 +109,12 @@ pub(crate) fn nearest_aspect_ratio(width: u32, height: u32) -> &'static str {
 }
 
 fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> {
+    let mut input = vec![json!({"text": r.prompt})];
+    if let Some(reference) = &r.reference {
+        input.push(json!({"inlineData": {"mimeType": "image/png", "data": reference.base64()}}));
+    }
     let mut body = json!({
-        "contents": [{"parts": [{"text": r.prompt}]}],
+        "contents": [{"parts": input}],
         "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
     });
     // The closest aspect ratio keeps cropping to a minimum when `imaging` fits the exact size.
@@ -142,8 +152,47 @@ fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> 
     })
 }
 
+fn speech(ctx: &CallContext, r: &SpeechRequest) -> Result<ProviderOutput, String> {
+    // Gemini only produces PCM/WAV, and there is no MP3 encoder here.
+    if r.format == AudioFormat::Mp3 {
+        return Err("Gemini speech can only be saved as .wav".into());
+    }
+    let voice = r.voice.as_deref().unwrap_or(&ctx.models.gemini_voice);
+    let body = json!({
+        "contents": [{"parts": [{"text": r.text}]}],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
+        },
+    });
+    let value = generate(ctx, &body)?;
+    let inline = parts(&value)?
+        .iter()
+        .find_map(|p| p.get("inlineData"))
+        .ok_or_else(|| "response contained no audio".to_string())?;
+    let mime = inline
+        .get("mimeType")
+        .and_then(Value::as_str)
+        .unwrap_or("audio/pcm");
+    let encoded = inline
+        .get("data")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "audio part had no data".to_string())?;
+    let data = STANDARD
+        .decode(encoded)
+        .map_err(|e| format!("invalid base64 audio data: {e}"))?;
+    Ok(ProviderOutput {
+        payload: Payload::Bytes {
+            data: audio::ensure_wav(data, TTS_SAMPLE_RATE, mime),
+            mime: r.format.mime().into(),
+        },
+        usage: usage(&value),
+        warnings: Vec::new(),
+    })
+}
+
 fn text(ctx: &CallContext, r: &TextRequest) -> Result<ProviderOutput, String> {
-    let mut body = json!({"contents": [{"role": "user", "parts": [{"text": r.prompt}]}]});
+    let mut body = json!({"contents": [{"role": "user", "parts": [{"text": r.full_prompt()}]}]});
     if let Some(system) = &r.system {
         body["systemInstruction"] = json!({"parts": [{"text": system}]});
     }

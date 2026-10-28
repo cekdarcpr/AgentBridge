@@ -17,12 +17,15 @@ pub fn resolve(explicit: Option<&str>) -> String {
             return name.trim().to_string();
         }
     }
+    display_path(&root())
+}
+
+/// The git repository containing the current directory, or the current directory outside git.
+pub fn root() -> PathBuf {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let root = cwd
-        .ancestors()
+    cwd.ancestors()
         .find(|dir| dir.join(".git").exists())
-        .unwrap_or(&cwd);
-    display_path(root)
+        .map_or_else(|| cwd.clone(), Path::to_path_buf)
 }
 
 /// Makes `path` absolute with consistent separators and refuses to replace an existing file

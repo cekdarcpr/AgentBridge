@@ -355,3 +355,54 @@ fn providers_and_usage_report_state() {
     assert_eq!(json["today"]["spent_usd"], 0.0);
     assert_eq!(json["project"], "test-project");
 }
+
+#[test]
+fn project_style_is_applied_and_reported() {
+    let sandbox = Sandbox::new("style");
+    let (output, json) = sandbox.run(&["style", "show"], &[]);
+    assert!(output.status.success());
+    assert!(json["file"].is_null());
+
+    let (output, _) = sandbox.run(&["style", "init"], &[]);
+    assert!(output.status.success());
+    let (output, json) = sandbox.run(&["style", "init"], &[]);
+    assert_eq!(output.status.code(), Some(6));
+    assert_eq!(json["error"]["code"], "output_error");
+
+    let (_, json) = sandbox.run(&["style", "show"], &[]);
+    assert!(json["style"]["description"]
+        .as_str()
+        .unwrap()
+        .contains("flat vector"));
+
+    let key = [("GEMINI_API_KEY", "test-gemini-key")];
+    let (output, json) = sandbox.run(&["image", "a key", "--out", "key.png", "--dry-run"], &key);
+    assert!(output.status.success());
+    assert!(json["style"]
+        .as_str()
+        .unwrap()
+        .ends_with("agentbridge.toml"));
+
+    let args = [
+        "image",
+        "a key",
+        "--out",
+        "key.png",
+        "--dry-run",
+        "--no-style",
+    ];
+    let (_, json) = sandbox.run(&args, &key);
+    assert!(json.get("style").is_none());
+}
+
+#[test]
+fn speech_falls_back_to_openrouter() {
+    let sandbox = Sandbox::new("speech-openrouter");
+    let (output, json) = sandbox.run(
+        &["speech", "Welcome back", "--out", "hello.wav", "--dry-run"],
+        &[("OPENROUTER_API_KEY", "test-openrouter-key")],
+    );
+    assert!(output.status.success());
+    assert_eq!(json["provider"], "openrouter");
+    assert_eq!(json["model"], "google/gemini-3.8-flash-tts");
+}

@@ -6,6 +6,7 @@ providers are used, the default models, the spending limits or the prices.
 - [The config file](#the-config-file)
 - [Routing](#routing)
 - [Default models and voices](#default-models-and-voices)
+- [Project style](#project-style)
 - [Limits](#limits)
 - [Prices](#prices)
 - [Environment variables](#environment-variables)
@@ -39,7 +40,7 @@ http_timeout_secs = 180
 [routing]
 image = ["openai", "gemini", "openrouter"]
 audio = ["elevenlabs"]
-speech = ["elevenlabs", "openai"]
+speech = ["elevenlabs", "openai", "gemini", "openrouter"]
 text = ["gemini", "openai", "openrouter"]
 
 [limits]
@@ -48,7 +49,7 @@ project_daily_usd = 2.0
 max_call_usd = 1.0
 
 [models]
-openai_image = "gpt-image-1"
+openai_image = "gpt-image-2.5-flare"
 openai_text = "gpt-4.1-mini"
 openai_speech = "gpt-4o-mini-tts"
 openai_voice = "alloy"
@@ -57,8 +58,12 @@ gemini_text = "gemini-2.5-flash"
 elevenlabs_speech = "eleven_multilingual_v2"
 elevenlabs_voice = "21m00Tcm4TlvDq8ikWAM"
 elevenlabs_wav_sample_rate = 44100
+gemini_speech = "gemini-3.8-flash-tts"
+gemini_voice = "Kore"
 openrouter_image = "google/gemini-2.5-flash-image"
 openrouter_text = "google/gemini-2.5-flash"
+openrouter_speech = "google/gemini-3.8-flash-tts"
+openrouter_voice = "Kore"
 
 [pricing]
 ```
@@ -81,9 +86,9 @@ text = ["openrouter"]
 | Provider | `image` | `audio` | `speech` | `text` |
 |---|:---:|:---:|:---:|:---:|
 | `openai` | ✓ | | ✓ | ✓ |
-| `gemini` | ✓ | | | ✓ |
+| `gemini` | ✓ | | ✓ | ✓ |
 | `elevenlabs` | | ✓ | ✓ | |
-| `openrouter` | ✓ | | | ✓ |
+| `openrouter` | ✓ | | ✓ | ✓ |
 
 An empty list disables the capability: agents get a `no_provider` error.
 
@@ -93,20 +98,54 @@ An empty list disables the capability: agents get a `no_provider` error.
 
 | Setting | Default | Used for |
 |---|---|---|
-| `openai_image` | `gpt-image-1` | Images through OpenAI |
+| `openai_image` | `gpt-image-2.5-flare` | Images through OpenAI. `gpt-image-1` was shut down by OpenAI and is replaced automatically |
 | `openai_text` | `gpt-4.1-mini` | `agb ask` through OpenAI |
 | `openai_speech` | `gpt-4o-mini-tts` | Speech through OpenAI |
 | `openai_voice` | `alloy` | Default OpenAI voice |
 | `gemini_image` | `gemini-2.5-flash-image` | Images through Gemini |
 | `gemini_text` | `gemini-2.5-flash` | `agb ask` through Gemini |
+| `gemini_speech` | `gemini-3.8-flash-tts` | Speech through Gemini; `.wav` output only |
+| `gemini_voice` | `Kore` | Default Gemini voice, for example `Puck`, `Zephyr` or `Charon` |
 | `elevenlabs_speech` | `eleven_multilingual_v2` | Speech through ElevenLabs |
 | `elevenlabs_voice` | `21m00Tcm4TlvDq8ikWAM` | Default ElevenLabs voice id |
 | `elevenlabs_wav_sample_rate` | `44100` | Sample rate of `.wav` sound effects; higher rates may need a paid ElevenLabs plan |
 | `openrouter_image` | `google/gemini-2.5-flash-image` | Images through OpenRouter's Image API; any image model, for example `qwen/qwen-image-2.1-turbo` |
 | `openrouter_text` | `google/gemini-2.5-flash` | `agb ask` through OpenRouter |
+| `openrouter_speech` | `google/gemini-3.8-flash-tts` | Speech through OpenRouter; any model from its [text-to-speech list](https://openrouter.ai/collections/text-to-speech-models) |
+| `openrouter_voice` | `Kore` | Default voice for `openrouter_speech`. Voices belong to the model: `Kore` works for Gemini TTS, `alloy` for OpenAI models. When you change the model, change the voice too |
+
+Speech models differ in the formats they return. Gemini TTS, directly or through OpenRouter, only
+produces `.wav`; some OpenRouter models, such as MiniMax, only produce `.mp3`. When a model cannot
+produce the requested format, the call fails and the next provider in the routing is tried.
 
 `http_timeout_secs` (default 180) is how long a single provider request may take. Image models can
 need a minute or more.
+
+## Project style
+
+The style that keeps a project's images consistent is not part of this file. It lives in
+`agentbridge.toml` inside the project, so it is versioned with the code and shared by everyone who
+works on it:
+
+```toml
+[style]
+description = "flat vector illustration, bold rounded shapes, soft shading, clean outlines"
+palette = ["#1E293B", "#6366F1", "#F59E0B", "#F8FAFC"]
+avoid = "text, watermarks, photorealism"
+reference = "assets/style-reference.png"
+```
+
+| Key | Meaning |
+|---|---|
+| `description` | How every image should look: medium, rendering, shapes, lighting. |
+| `palette` | Colors to stay within, as hex codes. |
+| `avoid` | What to keep out of every image. |
+| `reference` | An existing image whose style new images should match, relative to `agentbridge.toml` and inside the project folder. It is sent to the provider with every image request. |
+
+Every key is optional. `agb style init` writes a starting file at the project root and `agb style show`
+prints the style that applies. agb looks for `agentbridge.toml` in the current folder and its parents,
+up to the root of the git repository. See [Consistent style](concepts.md#consistent-style) for how it is
+used.
 
 ## Limits
 
@@ -129,8 +168,8 @@ other models, under `[pricing]`, keyed by `provider/model`:
 
 ```toml
 # A flat price per call
-[pricing."openai/gpt-image-1"]
-per_call = 0.042
+[pricing."openai/gpt-image-2.5-flare"]
+per_call = 0.04
 
 # Token prices in US dollars per million tokens, used when the provider reports token usage
 [pricing."gemini/gemini-2.5-pro"]

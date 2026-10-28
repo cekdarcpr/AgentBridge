@@ -10,7 +10,10 @@ use agentbridge_core::{
 };
 use serde::Serialize;
 
-use crate::{commands::run_engine, output, GenOptions};
+use crate::{
+    commands::{apply_style, run_engine},
+    output, GenOptions,
+};
 
 /// The generated master is kept next to the icons so the set can be rebuilt for free with `--from`.
 const MASTER_FILE: &str = "icon-source.png";
@@ -86,6 +89,7 @@ pub struct IconSetArgs {
     pub preset: IconPreset,
     pub from: Option<PathBuf>,
     pub transparent: bool,
+    pub no_style: bool,
 }
 
 #[derive(Serialize)]
@@ -140,16 +144,19 @@ pub fn icon_set(
         }
         (None, Some(prompt)) => {
             let master = out_dir.join(MASTER_FILE);
+            let styled = apply_style(prompt.clone(), args.no_style)?;
             let request = Request::Image(ImageRequest {
-                prompt: format!("{} {ICON_PROMPT_SUFFIX}", prompt.trim_end()),
+                prompt: format!("{} {ICON_PROMPT_SUFFIX}", styled.prompt),
                 size: Some((MASTER_SIZE, MASTER_SIZE)),
                 transparent: args.transparent,
                 quality: None,
                 format: ImageFormat::Png,
                 fit: Some(Fit::Contain),
                 trim: false,
+                reference: styled.reference,
             });
-            let result = run_engine(paths, &request, Some(master.clone()), &gen)?;
+            let mut result = run_engine(paths, &request, Some(master.clone()), &gen)?;
+            result.style = styled.file;
             if result.dry_run {
                 output::print_icon_plan(&plan(Some(result)), json);
                 return Ok(());

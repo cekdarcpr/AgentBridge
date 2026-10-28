@@ -25,6 +25,7 @@ agb process <input> --out <file> [--size WxH] [--transparent] [--trim] [--fit â€
 agb audio  "<prompt>" --out <file.mp3|.wav> [--duration SECONDS] --json
 agb speech "<text>"   --out <file.mp3|.wav> [--voice VOICE] --json
 agb ask    "<prompt>" [--file PATH]... [--system TEXT] [--out FILE] --json
+agb style show --json
 ```
 
 Pick the command by what the project needs:
@@ -79,8 +80,12 @@ The output is a single JSON object.
 - Ask for a capability, not a vendor. Do not pass `--provider` or `--model` unless the user asks for a
   specific provider or model; the user's routing chooses it.
 - Save assets into the project's existing asset folders, with descriptive file names.
-- Write specific prompts: subject, style, colors and intended use. Keep the style words identical
-  across assets that belong together. Avoid text in icons.
+- If the project has an `agentbridge.toml` with a `[style]` (check with `agb style show --json`), the
+  style, palette and reference image are added to every image for you. Describe only the subject and
+  its use; do not add style or color words that contradict it. Use `--no-style` only when the user
+  asks for an image in a different style.
+- Without a project style, write specific prompts: subject, style, colors and intended use, and keep
+  the style words identical across assets that belong together. Avoid text in icons.
 - Generate only what the task needs. Every generation costs the user money; `agb process` and
   `agb icon-set --from` are free.
 - Never print, log, store or ask for API key values. Keys are managed by the user with `agb keys`.

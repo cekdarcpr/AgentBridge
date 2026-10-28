@@ -62,6 +62,17 @@ pub trait Provider: Send + Sync {
 }
 
 const VERIFY_TIMEOUT_SECS: u64 = 20;
+/// Short strings are not redacted: they could match ordinary words in an error message.
+const MIN_REDACT_LEN: usize = 8;
+
+/// Removes the API key from a message before it is shown or logged; some providers echo the key
+/// they rejected.
+pub fn redact(message: &str, secret: &str) -> String {
+    if secret.len() < MIN_REDACT_LEN {
+        return message.to_string();
+    }
+    message.replace(secret, "[redacted]")
+}
 
 /// Checks a key without generating anything, so it costs nothing.
 pub fn verify_key(id: ProviderId, api_key: &str) -> Result<(), String> {
@@ -72,8 +83,10 @@ pub fn verify_key(id: ProviderId, api_key: &str) -> Result<(), String> {
     let response = get(id)
         .verify_request(&client, api_key)
         .send()
-        .map_err(http::network_error)?;
-    http::ensure_success(response).map(|_| ())
+        .map_err(|e| redact(&http::network_error(e), api_key))?;
+    http::ensure_success(response)
+        .map(|_| ())
+        .map_err(|e| redact(&e, api_key))
 }
 
 pub fn get(id: ProviderId) -> &'static dyn Provider {
@@ -103,4 +116,18 @@ fn usage_from(value: &Value, input_pointer: &str, output_pointer: &str) -> Optio
 
 fn unsupported(provider: ProviderId, capability: Capability) -> String {
     format!("{provider} does not support {capability}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_keys_from_messages() {
+        assert_eq!(
+            redact("bad key sk-12345678", "sk-12345678"),
+            "bad key [redacted]"
+        );
+        assert_eq!(redact("short", "abc"), "short");
+    }
 }

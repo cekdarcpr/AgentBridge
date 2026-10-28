@@ -4,6 +4,34 @@ All notable changes to agentBridge are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-27
+
+Every provider can be used for everything it offers, and the assets of a project share one look.
+
+### Added
+
+- **Project style profiles.** An `agentbridge.toml` at the project root holds a `[style]` with a
+  description, a color palette, things to avoid and an optional reference image. `agb image` and
+  `agb icon-set` apply it to every prompt and send the reference image to the provider, so assets made
+  by different agents on different days match. `--no-style` skips it for one call.
+- **`agb style show`** prints the style that applies, and **`agb style init`** writes a starting file.
+- Image results report the style file that was applied in `style`.
+- **Speech through Google Gemini** (`gemini-3.8-flash-tts`, `.wav` output).
+- **Speech through OpenRouter** with any of its text-to-speech models, recorded at the billed amount
+  when OpenRouter reports it.
+- New settings `gemini_speech`, `gemini_voice`, `openrouter_speech` and `openrouter_voice`.
+
+### Changed
+
+- The default OpenAI image model is `gpt-image-2.5-flare`. OpenAI shut down `gpt-image-1` on
+  October 23, 2026; configurations that still name it are switched automatically.
+- The default speech routing is ElevenLabs, OpenAI, Gemini, then OpenRouter.
+
+### Security
+
+- API keys are now also removed from the error messages of `agb keys test`.
+- Files attached with `agb ask --file` are no longer copied into the call log; only the prompt is.
+
 ## [0.2.0] - 2026-10-27
 
 agentBridge becomes an asset tool: generated images are finished into the file the project needs.
@@ -46,5 +74,6 @@ First release.
 - API keys in the operating system keychain; `agb keys set`, `test`, `list` and `remove`.
 - JSON output, stable error codes and exit codes for agents.
 
+[0.3.0]: https://github.com/cekdarcpr/AgentBridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/cekdarcpr/AgentBridge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cekdarcpr/AgentBridge/releases/tag/v0.1.0

@@ -3,8 +3,10 @@ resolver = "2"
 members = ["crates/agentbridge-core", "crates/agentbridge-cli"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cekdarcpr/AgentBridge"
 
 [workspace.dependencies]
 agentbridge-core = { path = "crates/agentbridge-core" }

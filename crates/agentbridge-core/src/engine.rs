@@ -12,13 +12,10 @@ use crate::{
     error::AppError,
     imaging::{self, ImageSpec},
     keystore, pricing, project,
-    providers::{self, CallContext, Payload},
+    providers::{self, redact, CallContext, Payload},
     request::Request,
     store::{NewCall, Store},
 };
-
-/// Short strings are not redacted: they could match ordinary words in an error message.
-const MIN_REDACT_LEN: usize = 8;
 
 #[derive(Debug, Clone, Default)]
 pub struct RunOptions {
@@ -84,6 +81,9 @@ pub struct RunResult {
     pub call_id: Option<i64>,
     pub attempts: Vec<Attempt>,
     pub warnings: Vec<String>,
+    /// The project style file applied to the prompt, set by the front end that applied it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
 }
 
 #[derive(Debug)]
@@ -188,7 +188,7 @@ impl Engine {
             };
 
             let price = pricing::lookup(&self.config.pricing, provider_id, &model);
-            let estimate = pricing::estimate(price.as_ref(), request.prompt());
+            let estimate = pricing::estimate(price.as_ref(), &request.full_prompt());
             let mut warnings = Vec::new();
             let fallback_used = !attempts.is_empty();
             // Providers without alpha output draw on a flat backdrop that `imaging` removes.
@@ -224,6 +224,7 @@ impl Engine {
                     call_id: None,
                     attempts,
                     warnings,
+                    style: None,
                 });
             }
 
@@ -318,6 +319,7 @@ impl Engine {
                 call_id: Some(call_id),
                 attempts,
                 warnings,
+                style: None,
             });
         }
 
@@ -459,13 +461,6 @@ fn elapsed_ms(started: Instant) -> i64 {
     i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)
 }
 
-fn redact(message: &str, secret: &str) -> String {
-    if secret.len() < MIN_REDACT_LEN {
-        return message.to_string();
-    }
-    message.replace(secret, "[redacted]")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +487,7 @@ mod tests {
             format: ImageFormat::Png,
             fit: None,
             trim: false,
+            reference: None,
         })
     }
 
@@ -551,14 +547,5 @@ mod tests {
         };
         let err = engine().candidates(&image(false), &opts).unwrap_err();
         assert_eq!(err.code(), "usage");
-    }
-
-    #[test]
-    fn redacts_keys_from_messages() {
-        assert_eq!(
-            redact("bad key sk-12345678", "sk-12345678"),
-            "bad key [redacted]"
-        );
-        assert_eq!(redact("short", "abc"), "short");
     }
 }

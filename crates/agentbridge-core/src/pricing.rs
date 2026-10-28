@@ -30,16 +30,19 @@ fn builtin(key: &str) -> Option<PriceEntry> {
     };
     match key {
         "openai/gpt-image-1" => Some(entry(Some(0.042), Some(5.0), Some(40.0))),
+        "openai/gpt-image-2.5-flare" => Some(entry(Some(0.04), Some(5.0), Some(30.0))),
         "openai/gpt-4.1-mini" => Some(entry(None, Some(0.40), Some(1.60))),
         "openai/gpt-4o-mini-tts" => Some(entry(Some(0.015), None, None)),
         "gemini/gemini-2.5-flash-image" => Some(entry(Some(0.039), Some(0.30), Some(30.0))),
         "gemini/gemini-2.5-flash" => Some(entry(None, Some(0.30), Some(2.50))),
+        "gemini/gemini-3.8-flash-tts" => Some(entry(None, Some(0.50), Some(9.0))),
         "elevenlabs/sound-generation" => Some(entry(Some(0.03), None, None)),
         "elevenlabs/eleven_multilingual_v2" => Some(entry(Some(0.03), None, None)),
         "openrouter/google/gemini-2.5-flash-image" => {
             Some(entry(Some(0.039), Some(0.30), Some(30.0)))
         }
         "openrouter/google/gemini-2.5-flash" => Some(entry(None, Some(0.30), Some(2.50))),
+        "openrouter/google/gemini-3.8-flash-tts" => Some(entry(None, Some(0.50), Some(9.0))),
         _ => None,
     }
 }

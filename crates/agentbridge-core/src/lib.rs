@@ -15,6 +15,7 @@ pub mod project;
 pub mod providers;
 pub mod request;
 pub mod store;
+pub mod style;
 
 pub use capability::{Capability, ProviderId};
 pub use config::Config;
@@ -23,7 +24,7 @@ pub use error::AppError;
 pub use imaging::Fit;
 pub use paths::Paths;
 pub use request::{
-    parse_size, AudioFormat, AudioRequest, ImageFormat, ImageRequest, Request, SpeechRequest,
-    TextRequest,
+    parse_size, AudioFormat, AudioRequest, ImageFormat, ImageRequest, Reference, Request,
+    SpeechRequest, TextRequest,
 };
 pub use store::Store;

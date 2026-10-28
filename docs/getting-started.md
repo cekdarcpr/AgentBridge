@@ -37,7 +37,7 @@ agentBridge itself is free and has no server. One provider is enough to start:
 | Images and text, the simplest start | [OpenAI](https://platform.openai.com/api-keys) | `agb keys set openai` |
 | Images and text from Google | [Google AI Studio](https://aistudio.google.com/apikey) | `agb keys set gemini` |
 | Sound effects and natural voices | [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) | `agb keys set elevenlabs` |
-| Many image and text models with one key | [OpenRouter](https://openrouter.ai/settings/keys) | `agb keys set openrouter` |
+| Images, voices and text from many vendors with one key | [OpenRouter](https://openrouter.ai/settings/keys) | `agb keys set openrouter` |
 
 Run the command, paste the key when asked and press Enter:
 
@@ -69,7 +69,7 @@ agb image "pixel art sword icon, flat colors" --out assets/sword.png --size 64x6
 ```
 
 ```text
-dry run: would use openai/gpt-image-1, estimated ~$0.042
+dry run: would use openai/gpt-image-2.5-flare, estimated ~$0.040
 ```
 
 Now make it for real:
@@ -80,7 +80,7 @@ agb image "pixel art sword icon, flat colors" --out assets/sword.png --size 64x6
 
 ```text
 C:\projects\my-game\assets\sword.png
-openai/gpt-image-1 · ~$0.042 · 64x64
+openai/gpt-image-2.5-flare · ~$0.040 · 64x64
 ```
 
 You now have a 64×64 PNG with a transparent background in `assets/`. The model drew a large image;
@@ -98,6 +98,15 @@ agb audio "soft UI click" --out assets/click.wav --duration 0.5
 # Resize and convert an image you already have; local and free
 agb process logo.png --out public/logo-256.webp --size 256x256
 ```
+
+To give every image in the project the same look, create a project style and edit it:
+
+```bash
+agb style init
+```
+
+It writes `agentbridge.toml` with a style description, a palette and things to avoid; you can also point
+it to a reference image. See [One style for the whole project](guide.md#one-style-for-the-whole-project).
 
 The [Guide](guide.md) has recipes for common assets.
 

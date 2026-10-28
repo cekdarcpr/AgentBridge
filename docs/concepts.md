@@ -8,6 +8,7 @@ under control.
 - [Routing and fallback](#routing-and-fallback)
 - [The asset pipeline](#the-asset-pipeline)
 - [Transparency with any provider](#transparency-with-any-provider)
+- [Consistent style](#consistent-style)
 - [Budgets](#budgets)
 - [Cost tracking and the call log](#cost-tracking-and-the-call-log)
 - [Keys, privacy and security](#keys-privacy-and-security)
@@ -34,7 +35,7 @@ For each capability you keep an ordered list of providers, the **routing**. The 
 |---|---|
 | Image | OpenAI → Google Gemini → OpenRouter |
 | Sound effect | ElevenLabs |
-| Speech | ElevenLabs → OpenAI |
+| Speech | ElevenLabs → OpenAI → Google Gemini → OpenRouter |
 | Text | Google Gemini → OpenAI → OpenRouter |
 
 When a call is made:
@@ -100,6 +101,37 @@ ones you want to use. agentBridge handles it in one of two ways:
 If a provider ignores the instruction and draws a busy background, the image is saved unchanged and the
 result includes a warning instead of a damaged cut-out.
 
+## Consistent style
+
+Images generated one at a time drift apart: a different palette, line weight or level of detail on
+every call, even with the same provider. A project **style profile** keeps them together. It lives in
+`agentbridge.toml` at the project root:
+
+```toml
+[style]
+description = "pixel art, 16-bit, limited shading, dark outline"
+palette = ["#1A1C2C", "#5D275D", "#B13E53", "#EF7D57", "#FFCD75"]
+avoid = "text, gradients, photorealism"
+reference = "assets/sprites/hero.png"
+```
+
+Every `agb image` and `agb icon-set` call made in the project then:
+
+1. **Adds the style to the prompt** after the subject: the description, the palette and what to avoid.
+   The agent only describes *what* to draw.
+2. **Sends the reference image** with the request, asking the model to match its style without copying
+   its subject. Providers that take image input receive it directly: OpenAI, Gemini and OpenRouter.
+   The reference is downscaled to 1024 pixels first to keep the request small.
+3. **Reports the style file** it applied in the `style` field of the result.
+
+Because the profile is a file in the repository, every agent, teammate and session uses the same
+style, and changing the look of a project is a one-line change. Pass `--no-style` for a single image
+that should not follow it, such as a photo-like banner.
+
+> [!TIP]
+> The strongest reference is an asset you already like from the same project. Generate a first image,
+> keep the best one and point `reference` to it.
+
 ## Budgets
 
 Three limits protect you from runaway spending:
@@ -127,7 +159,7 @@ Costs are recorded as accurately as each provider allows:
 
 | Source | Used when | `cost_is_estimate` |
 |---|---|:---:|
-| The amount the provider billed | OpenRouter reports it for every call | `false` |
+| The amount the provider billed | OpenRouter reports it for its calls (for speech, when its statistics are ready in time) | `false` |
 | Token usage × token prices | The provider reports token usage and prices are known | `false` |
 | The price table | Neither of the above | `true` |
 
@@ -149,4 +181,8 @@ that it can never spend unnoticed; add its real price in the [configuration](con
 - **Your prompts go only to the provider that handles the call.** agentBridge has no server of its
   own and collects no telemetry. `agb process` and `agb icon-set --from` send nothing anywhere.
 - **The call log stays on your machine.** It contains your prompts; delete the database file shown by
-  `agb config path` to clear it.
+  `agb config path` to clear it. Files attached with `agb ask --file` are sent to the model but never
+  written to the log.
+- **A style reference never leaves the project.** The `reference` image in `agentbridge.toml` must be
+  inside the project folder, so a style file in a cloned repository cannot make agb upload an image
+  from elsewhere on your machine.

@@ -3,6 +3,7 @@
 Practical recipes for the assets projects need most. Each recipe works the same whether you type the
 command yourself or your coding agent runs it.
 
+- [One style for the whole project](#one-style-for-the-whole-project)
 - [Game sprites and items](#game-sprites-and-items)
 - [UI icons](#ui-icons)
 - [Website favicons](#website-favicons)
@@ -14,6 +15,35 @@ command yourself or your coding agent runs it.
 - [Asking a text model](#asking-a-text-model)
 - [Choosing a provider or model](#choosing-a-provider-or-model)
 - [Writing good prompts](#writing-good-prompts)
+
+## One style for the whole project
+
+Set the style once, and every image in the project follows it:
+
+```bash
+agb style init
+```
+
+This writes `agentbridge.toml` at the project root. Edit it to describe your look:
+
+```toml
+[style]
+description = "pixel art, 16-bit, limited shading, dark outline"
+palette = ["#1A1C2C", "#5D275D", "#B13E53", "#EF7D57", "#FFCD75"]
+avoid = "text, gradients, photorealism"
+```
+
+From now on, prompts only need the subject. `agb image "health potion" …` is generated as a 16-bit
+pixel art potion in your palette, and the result names the style file in `style`.
+
+Once you have an asset you like, make it the reference so new images match it even more closely:
+
+```toml
+reference = "assets/items/sword.png"
+```
+
+Commit `agentbridge.toml` so every agent and teammate uses the same style. Run `agb style show` to see
+what applies, and pass `--no-style` for an image that should look different.
 
 ## Game sprites and items
 
@@ -27,7 +57,8 @@ agb image "pixel art iron sword, 16-bit style, flat colors" \
 - Without `--fit`, transparent images are fitted with `contain`: the whole subject is kept and the rest
   is padded with transparency.
 
-For a set of items in the same style, keep the style words identical in every prompt:
+Without a [project style](#one-style-for-the-whole-project), keep the style words identical in every
+prompt of a set:
 
 ```bash
 agb image "pixel art health potion, 16-bit style, flat colors" --out assets/items/potion.png --size 64x64 --transparent --trim
@@ -141,7 +172,8 @@ agb speech "Welcome back, commander." --out assets/voice/welcome.mp3
 agb speech "Mission complete." --out assets/voice/complete.wav --voice nova --provider openai
 ```
 
-Speech is made by ElevenLabs or OpenAI, depending on your routing. `--voice` takes the provider's
+Speech is made by ElevenLabs, OpenAI, Google Gemini or OpenRouter, depending on your routing. Gemini
+voices are saved as `.wav` only. `--voice` takes the provider's
 voice name or id; the defaults are set in [Configuration](configuration.md).
 
 ## Asking a text model
@@ -164,7 +196,7 @@ the list that has a key, with fallback to the next one if it fails. To choose fo
 agb image "…" --out a.png --provider gemini
 
 # Use a specific model; the provider is recognized from the name
-agb image "…" --out a.png --model gpt-image-1
+agb image "…" --out a.png --model gpt-image-2.5-flare
 agb ask "…" --model gemini-2.5-pro
 
 # Any OpenRouter model, written as vendor/model
@@ -181,7 +213,8 @@ image requests; below that, calls fail with `HTTP 402`.
 
 - **Describe the subject, style and use:** *"pixel art iron sword, 16-bit style, flat colors, game
   inventory icon"* works better than *"sword"*.
-- **Keep style words identical** across a set of assets so they look like they belong together.
+- **Put the look in the project style**, not in every prompt: describe only the subject and let
+  `agentbridge.toml` add the style, palette and reference.
 - **Ask for simple shapes** for anything shown small, such as icons and favicons, and avoid text;
   lettering becomes unreadable at small sizes.
 - **Do not describe the background** when using `--transparent`. agentBridge adds the right

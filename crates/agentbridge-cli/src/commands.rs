@@ -6,14 +6,14 @@ use std::{
 };
 
 use agentbridge_core::{
-    keystore, parse_size, project, providers, AppError, AudioFormat, AudioRequest, Config, Engine,
-    ImageFormat, ImageRequest, Paths, ProviderId, Request, RunFailure, RunOptions, RunResult,
-    SpeechRequest, Store, TextRequest,
+    keystore, parse_size, project, providers, request::Attachment, style, AppError, AudioFormat,
+    AudioRequest, Config, Engine, ImageFormat, ImageRequest, Paths, ProviderId, Reference, Request,
+    RunFailure, RunOptions, RunResult, SpeechRequest, Store, TextRequest,
 };
 use serde::Serialize;
 use serde_json::json;
 
-use crate::{assets, output, Cli, Command, ConfigAction, GenOptions, KeysAction};
+use crate::{assets, output, Cli, Command, ConfigAction, GenOptions, KeysAction, StyleAction};
 
 /// Guards against an agent accidentally attaching a binary or a huge log.
 const MAX_ASK_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -30,18 +30,24 @@ pub fn run(cli: Cli) -> Result<(), RunFailure> {
             transparent,
             trim,
             quality,
+            no_style,
             gen,
         } => {
+            let styled = apply_style(prompt, no_style)?;
             let request = Request::Image(ImageRequest {
-                prompt,
+                prompt: styled.prompt,
                 size: size.as_deref().map(parse_size).transpose()?,
                 transparent,
                 quality: quality.map(|q| q.as_str().to_string()),
                 format: ImageFormat::from_path(&out)?,
                 fit,
                 trim,
+                reference: styled.reference,
             });
-            generate(&paths, request, Some(out), gen, json)
+            let mut result = run_engine(&paths, &request, Some(out), &gen)?;
+            result.style = styled.file;
+            output::print_result(&result, json);
+            Ok(())
         }
         Command::IconSet {
             prompt,
@@ -49,6 +55,7 @@ pub fn run(cli: Cli) -> Result<(), RunFailure> {
             preset,
             from,
             transparent,
+            no_style,
             gen,
         } => assets::icon_set(
             &paths,
@@ -58,6 +65,7 @@ pub fn run(cli: Cli) -> Result<(), RunFailure> {
                 preset,
                 from,
                 transparent,
+                no_style,
             },
             gen,
             json,
@@ -116,11 +124,13 @@ pub fn run(cli: Cli) -> Result<(), RunFailure> {
             gen,
         } => {
             let request = Request::Text(TextRequest {
-                prompt: with_files(prompt, &files)?,
+                prompt,
                 system,
+                files: read_attachments(&files)?,
             });
             generate(&paths, request, out, gen, json)
         }
+        Command::Style { action } => Ok(style_command(action, json)?),
         Command::Keys { action } => Ok(keys(action, json)?),
         Command::Providers => Ok(list_providers(&paths, json)?),
         Command::Usage { days, project } => Ok(usage(&paths, days, project.as_deref(), json)?),
@@ -161,8 +171,82 @@ pub fn run_engine(
     engine.run(request, &opts)
 }
 
-fn with_files(prompt: String, files: &[PathBuf]) -> Result<String, AppError> {
-    let mut combined = prompt;
+/// A prompt with the project style applied, the style's reference image and the file it came from.
+pub struct Styled {
+    pub prompt: String,
+    pub reference: Option<Reference>,
+    pub file: Option<String>,
+}
+
+pub fn apply_style(prompt: String, no_style: bool) -> Result<Styled, AppError> {
+    let profile = if no_style { None } else { style::current()? };
+    let Some(profile) = profile else {
+        return Ok(Styled {
+            prompt,
+            reference: None,
+            file: None,
+        });
+    };
+    Ok(Styled {
+        prompt: profile.apply(&prompt),
+        reference: profile.load_reference()?,
+        file: Some(project::display_path(&profile.file)),
+    })
+}
+
+fn style_command(action: StyleAction, json: bool) -> Result<(), AppError> {
+    match action {
+        StyleAction::Show => {
+            let profile = style::current()?;
+            let file = profile.as_ref().map(|p| project::display_path(&p.file));
+            let reference = profile
+                .as_ref()
+                .and_then(|p| p.reference_path.as_deref())
+                .map(project::display_path);
+            if json {
+                output::print_ok(&json!({
+                    "file": file,
+                    "style": profile.as_ref().map(|p| &p.style),
+                    "reference": reference,
+                }));
+                return Ok(());
+            }
+            let Some(profile) = profile else {
+                println!(
+                    "no project style; run `agb style init` to create {}",
+                    style::FILE_NAME
+                );
+                return Ok(());
+            };
+            let style = &profile.style;
+            println!("file:        {}", file.unwrap_or_default());
+            println!("description: {}", style.description);
+            println!("palette:     {}", style.palette.join(", "));
+            println!("avoid:       {}", style.avoid);
+            println!("reference:   {}", reference.unwrap_or_else(|| "-".into()));
+        }
+        StyleAction::Init { force } => {
+            let file = style::default_file();
+            if file.exists() && !force {
+                return Err(AppError::Output(format!(
+                    "{} already exists; pass --force to overwrite it",
+                    project::display_path(&file)
+                )));
+            }
+            project::write_file(&file, style::TEMPLATE.as_bytes())?;
+            let path = project::display_path(&file);
+            if json {
+                output::print_ok(&json!({"file": path}));
+            } else {
+                println!("{path}");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn read_attachments(files: &[PathBuf]) -> Result<Vec<Attachment>, AppError> {
+    let mut attachments = Vec::new();
     for path in files {
         let size = fs::metadata(path)
             .map_err(|e| AppError::Usage(format!("cannot read {}: {e}", path.display())))?
@@ -174,13 +258,12 @@ fn with_files(prompt: String, files: &[PathBuf]) -> Result<String, AppError> {
             )));
         }
         let bytes = fs::read(path)?;
-        combined.push_str(&format!(
-            "\n\n--- file: {} ---\n{}",
-            path.display(),
-            String::from_utf8_lossy(&bytes)
-        ));
+        attachments.push(Attachment {
+            name: path.display().to_string(),
+            content: String::from_utf8_lossy(&bytes).into_owned(),
+        });
     }
-    Ok(combined)
+    Ok(attachments)
 }
 
 fn key_status(provider: ProviderId) -> &'static str {

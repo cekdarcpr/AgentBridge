@@ -41,8 +41,9 @@ impl Config {
             return Ok(Self::default());
         }
         let text = fs::read_to_string(path)?;
-        let config: Self = toml::from_str(&text)
+        let mut config: Self = toml::from_str(&text)
             .map_err(|e| AppError::Config(format!("invalid config {}: {e}", path.display())))?;
+        config.models.replace_retired();
         config.validate()?;
         Ok(config)
     }
@@ -117,7 +118,12 @@ impl Default for Routing {
                 ProviderId::Openrouter,
             ],
             audio: vec![ProviderId::Elevenlabs],
-            speech: vec![ProviderId::Elevenlabs, ProviderId::Openai],
+            speech: vec![
+                ProviderId::Elevenlabs,
+                ProviderId::Openai,
+                ProviderId::Gemini,
+                ProviderId::Openrouter,
+            ],
             text: vec![
                 ProviderId::Gemini,
                 ProviderId::Openai,
@@ -169,9 +175,21 @@ pub struct Models {
     pub elevenlabs_voice: String,
     /// `pcm_*` rate requested for `.wav` output; higher rates may need a paid ElevenLabs tier.
     pub elevenlabs_wav_sample_rate: u32,
+    pub gemini_speech: String,
+    pub gemini_voice: String,
     pub openrouter_image: String,
     pub openrouter_text: String,
+    pub openrouter_speech: String,
+    /// Voices belong to the model behind OpenRouter, e.g. `Kore` for Gemini TTS, `alloy` for OpenAI.
+    pub openrouter_voice: String,
 }
+
+/// Models their provider has shut down, with the replacement. A config saved while one was the
+/// default would otherwise fail every call after the shutdown date.
+const RETIRED_MODELS: [(&str, &str); 2] = [
+    ("gpt-image-1", "gpt-image-2.5-flare"),
+    ("openai/gpt-image-1", "openai/gpt-image-2.5-flare"),
+];
 
 /// ElevenLabs' sound-effect endpoint has no model parameter; this name only labels logs and prices.
 pub const ELEVENLABS_SFX_MODEL: &str = "sound-generation";
@@ -179,7 +197,7 @@ pub const ELEVENLABS_SFX_MODEL: &str = "sound-generation";
 impl Default for Models {
     fn default() -> Self {
         Self {
-            openai_image: "gpt-image-1".into(),
+            openai_image: "gpt-image-2.5-flare".into(),
             openai_text: "gpt-4.1-mini".into(),
             openai_speech: "gpt-4o-mini-tts".into(),
             openai_voice: "alloy".into(),
@@ -188,8 +206,12 @@ impl Default for Models {
             elevenlabs_speech: "eleven_multilingual_v2".into(),
             elevenlabs_voice: "21m00Tcm4TlvDq8ikWAM".into(),
             elevenlabs_wav_sample_rate: 44_100,
+            gemini_speech: "gemini-3.8-flash-tts".into(),
+            gemini_voice: "Kore".into(),
             openrouter_image: "google/gemini-2.5-flash-image".into(),
             openrouter_text: "google/gemini-2.5-flash".into(),
+            openrouter_speech: "google/gemini-3.8-flash-tts".into(),
+            openrouter_voice: "Kore".into(),
         }
     }
 }
@@ -202,15 +224,36 @@ impl Models {
             (ProviderId::Openai, Capability::Speech) => &self.openai_speech,
             (ProviderId::Gemini, Capability::Image) => &self.gemini_image,
             (ProviderId::Gemini, Capability::Text) => &self.gemini_text,
+            (ProviderId::Gemini, Capability::Speech) => &self.gemini_speech,
             (ProviderId::Elevenlabs, Capability::Speech) => &self.elevenlabs_speech,
             (ProviderId::Openrouter, Capability::Image) => &self.openrouter_image,
             (ProviderId::Openrouter, Capability::Text) => &self.openrouter_text,
+            (ProviderId::Openrouter, Capability::Speech) => &self.openrouter_speech,
             (ProviderId::Elevenlabs, Capability::Audio) => {
                 return Some(ELEVENLABS_SFX_MODEL.into())
             }
             _ => return None,
         };
         Some(model.clone())
+    }
+
+    fn replace_retired(&mut self) {
+        let fields = [
+            &mut self.openai_image,
+            &mut self.openai_text,
+            &mut self.openai_speech,
+            &mut self.gemini_image,
+            &mut self.gemini_text,
+            &mut self.gemini_speech,
+            &mut self.openrouter_image,
+            &mut self.openrouter_text,
+            &mut self.openrouter_speech,
+        ];
+        for field in fields {
+            if let Some((_, replacement)) = RETIRED_MODELS.iter().find(|(old, _)| old == field) {
+                *field = (*replacement).to_string();
+            }
+        }
     }
 }
 
@@ -223,7 +266,21 @@ mod tests {
         let text = Config::default().to_toml().unwrap();
         let parsed: Config = toml::from_str(&text).unwrap();
         assert_eq!(parsed.routing.image, Routing::default().image);
-        assert_eq!(parsed.models.openai_image, "gpt-image-1");
+        assert_eq!(parsed.models.openai_image, "gpt-image-2.5-flare");
+    }
+
+    #[test]
+    fn replaces_retired_models() {
+        let mut models = Models {
+            openai_image: "gpt-image-1".into(),
+            openrouter_image: "openai/gpt-image-1".into(),
+            gemini_text: "my-custom-model".into(),
+            ..Models::default()
+        };
+        models.replace_retired();
+        assert_eq!(models.openai_image, "gpt-image-2.5-flare");
+        assert_eq!(models.openrouter_image, "openai/gpt-image-2.5-flare");
+        assert_eq!(models.gemini_text, "my-custom-model");
     }
 
     #[test]

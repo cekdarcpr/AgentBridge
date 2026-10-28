@@ -5,7 +5,7 @@ The complete reference for `agb`. Run `agb <command> --help` for the same inform
 - [Creating assets](#creating-assets): [`image`](#agb-image), [`icon-set`](#agb-icon-set),
   [`process`](#agb-process), [`audio`](#agb-audio), [`speech`](#agb-speech), [`ask`](#agb-ask)
 - [Options shared by generating commands](#options-shared-by-generating-commands)
-- [Managing](#managing): [`keys`](#agb-keys), [`providers`](#agb-providers), [`usage`](#agb-usage),
+- [Managing](#managing): [`style`](#agb-style), [`keys`](#agb-keys), [`providers`](#agb-providers), [`usage`](#agb-usage),
   [`log`](#agb-log), [`config`](#agb-config)
 - [JSON output](#json-output)
 - [Error codes and exit codes](#error-codes-and-exit-codes)
@@ -28,6 +28,7 @@ agb image <PROMPT> --out <FILE> [options]
 | `--transparent` | Transparent background. Works with every provider. Not possible with `.jpg`. |
 | `--trim` | Crop transparent margins so the subject fills the frame. Requires `--transparent`. |
 | `--quality <low\|medium\|high>` | Generation quality where the provider supports it. OpenAI defaults to `medium`. |
+| `--no-style` | Ignore the [project style](#agb-style) for this image. |
 
 Plus the [shared options](#options-shared-by-generating-commands).
 
@@ -46,6 +47,7 @@ agb icon-set --from <IMAGE> --out-dir <DIR> [--preset web|app]
 | `--preset <web\|app>` | Which set to produce. Default: `web`. |
 | `--from <IMAGE>` | Build the set from this image instead of generating one. Local and free. |
 | `--transparent` | Transparent background around a generated icon. |
+| `--no-style` | Ignore the [project style](#agb-style) for the generated icon. |
 
 | Preset | Files |
 |---|---|
@@ -103,6 +105,9 @@ agb speech <TEXT> --out <FILE> [--voice <VOICE>] [options]
 | `--out <FILE>` | `.mp3` or `.wav`. Required. |
 | `--voice <VOICE>` | The provider's voice name or id. Defaults are set in the configuration. |
 
+Speech is available through ElevenLabs, OpenAI, Google Gemini and OpenRouter. Gemini text-to-speech
+writes `.wav` only.
+
 ### `agb ask`
 
 Ask a text model. The answer is printed, or written to a file with `--out`.
@@ -130,6 +135,18 @@ agb ask <PROMPT> [--file <PATH>]... [--system <TEXT>] [--out <FILE>] [options]
 | `--project <NAME>` | Project name for per-project limits. Default: the git repository root of the current folder. |
 
 ## Managing
+
+### `agb style`
+
+The project style applied to every generated image. It is stored in `agentbridge.toml`; see
+[Project style](configuration.md#project-style).
+
+| Command | Description |
+|---|---|
+| `agb style show` | Print the style that applies in the current folder, the file it comes from and the reference image. |
+| `agb style init [--force]` | Write an `agentbridge.toml` with an example style at the project root. |
+
+`agb image` and `agb icon-set` apply the style automatically; `--no-style` skips it for one call.
 
 ### `agb keys`
 
@@ -194,7 +211,8 @@ field.
     { "provider": "openai", "model": null, "status": "skipped", "reason": "no API key; run `agb keys set openai` or set OPENAI_API_KEY" },
     { "provider": "gemini", "model": "gemini-2.5-flash-image", "status": "succeeded" }
   ],
-  "warnings": []
+  "warnings": [],
+  "style": "C:\\projects\\my-game\\agentbridge.toml"
 }
 ```
 
@@ -210,6 +228,7 @@ field.
 | `call_id` | Id of the entry in the call log. |
 | `attempts` | Every provider considered, with `status` `succeeded`, `failed`, `skipped` or `planned`, and a `reason`. |
 | `warnings` | Things the agent should know, for example that an image was upscaled or a background could not be removed. |
+| `style` | The `agentbridge.toml` whose style was applied, for images. Absent when no style was used. |
 
 ### Icon set
 
