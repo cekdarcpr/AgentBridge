@@ -6,6 +6,11 @@ All notable changes to agentBridge are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
+Agents can be set up and routing changed from the command line, busy providers are retried, and
+releases ship ready-to-run binaries.
+
 ### Added
 
 - **`agb agent init`** adds the agent instructions to the project's `CLAUDE.md` and `AGENTS.md`, or
@@ -111,7 +116,8 @@ First release.
 - API keys in the operating system keychain; `agb keys set`, `test`, `list` and `remove`.
 - JSON output, stable error codes and exit codes for agents.
 
-[Unreleased]: https://github.com/cekdarcpr/AgentBridge/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/cekdarcpr/AgentBridge/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/cekdarcpr/AgentBridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cekdarcpr/AgentBridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/cekdarcpr/AgentBridge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cekdarcpr/AgentBridge/releases/tag/v0.1.0
