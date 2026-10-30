@@ -42,9 +42,13 @@ When a call is made:
 
 1. Providers without an API key are **skipped**.
 2. The first provider with a key is called.
-3. If it **fails**, for example because it is down, rate-limited or rejects the prompt, the next one
-   is tried.
-4. The JSON result lists every provider that was considered in `attempts`, and `fallback_used` tells
+3. If it is **busy** (HTTP 429) or has a temporary server error (500, 502, 503, 504), the same request
+   is retried up to two more times, waiting 1 then 2 seconds, or as long as the provider's
+   `Retry-After` header asks, up to 20 seconds. Timeouts are not retried, because the provider may
+   still finish and bill the first request.
+4. If it still **fails**, for example because it is down, out of credit or rejects the prompt, the
+   next one is tried.
+5. The JSON result lists every provider that was considered in `attempts`, and `fallback_used` tells
    the agent whether the first choice was replaced.
 
 Fallback is turned off with `--no-fallback`, or implicitly when the agent pins a provider with

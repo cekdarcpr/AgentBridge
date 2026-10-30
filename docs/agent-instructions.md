@@ -1,8 +1,9 @@
 # agentBridge agent instructions
 
-This file teaches a coding agent to use `agb`. Copy everything below the line into the instruction file
-your agent reads in your project root: `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex, Cursor and
-most other agents. Keep the text as it is; it is written for the agent, not for people.
+This file teaches a coding agent to use `agb`. The easiest way to install it is `agb agent init` in your
+project, which writes everything below the line into `CLAUDE.md` (Claude Code) or `AGENTS.md` (Codex,
+Cursor and most other agents). You can also copy it by hand. Keep the text as it is; it is written for
+the agent, not for people.
 
 ---
 

@@ -56,13 +56,12 @@ impl Provider for Gemini {
 }
 
 fn generate(ctx: &CallContext, body: &Value) -> Result<Value, String> {
-    let response = ctx
-        .http
-        .post(format!("{BASE_URL}/{}:generateContent", ctx.model))
-        .header("x-goog-api-key", ctx.api_key)
-        .json(body)
-        .send()
-        .map_err(http::network_error)?;
+    let response = http::send(
+        ctx.http
+            .post(format!("{BASE_URL}/{}:generateContent", ctx.model))
+            .header("x-goog-api-key", ctx.api_key)
+            .json(body),
+    )?;
     http::read_json(http::ensure_success(response)?)
 }
 

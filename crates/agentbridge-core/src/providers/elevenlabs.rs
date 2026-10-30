@@ -67,13 +67,12 @@ fn post_audio(
         AudioFormat::Mp3 => MP3_OUTPUT_FORMAT.to_string(),
         AudioFormat::Wav => format!("pcm_{sample_rate}"),
     };
-    let response = ctx
-        .http
-        .post(format!("{BASE_URL}{path}?output_format={output_format}"))
-        .header("xi-api-key", ctx.api_key)
-        .json(body)
-        .send()
-        .map_err(http::network_error)?;
+    let response = http::send(
+        ctx.http
+            .post(format!("{BASE_URL}{path}?output_format={output_format}"))
+            .header("xi-api-key", ctx.api_key)
+            .json(body),
+    )?;
     let bytes = http::read_bytes(http::ensure_success(response)?)?;
     let data = match format {
         AudioFormat::Mp3 => bytes,

@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
+use toml::{Table, Value};
 
 use crate::{
     capability::{Capability, ProviderId},
@@ -10,6 +11,8 @@ use crate::{
 };
 
 const DEFAULT_HTTP_TIMEOUT_SECS: u64 = 180;
+/// The tables `agb config set` can change; `[pricing]` is keyed by free-form model ids instead.
+const SETTABLE_SECTIONS: [&str; 3] = ["routing", "limits", "models"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -40,11 +43,69 @@ impl Config {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let text = fs::read_to_string(path)?;
-        let mut config: Self = toml::from_str(&text)
+        Self::parse(&fs::read_to_string(path)?, path)
+    }
+
+    fn parse(text: &str, path: &Path) -> Result<Self, AppError> {
+        let config: Self = toml::from_str(text)
             .map_err(|e| AppError::Config(format!("invalid config {}: {e}", path.display())))?;
-        config.models.replace_retired();
-        config.validate()?;
+        config.checked()
+    }
+
+    fn checked(mut self) -> Result<Self, AppError> {
+        self.models.replace_retired();
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// Changes one setting, such as `routing.image` or `limits.daily_usd`, and returns the result.
+    /// Only that setting is written: whatever else the file leaves out keeps following the defaults.
+    pub fn set_value(path: &Path, key: &str, value: &str) -> Result<Self, AppError> {
+        let mut file: Table = if path.exists() {
+            toml::from_str(&fs::read_to_string(path)?)
+                .map_err(|e| AppError::Config(format!("invalid config {}: {e}", path.display())))?
+        } else {
+            Table::new()
+        };
+        let defaults = Table::try_from(Self::default())
+            .map_err(|e| AppError::Internal(format!("could not serialize config: {e}")))?;
+        let (section, field) = match key.split_once('.') {
+            Some((section, field)) => (Some(section), field),
+            None => (None, key),
+        };
+        let current = match section {
+            Some(section) if SETTABLE_SECTIONS.contains(&section) => {
+                defaults.get(section).and_then(|table| table.get(field))
+            }
+            None => defaults.get(field).filter(|v| !v.is_table()),
+            Some(_) => None,
+        }
+        .ok_or_else(|| {
+            AppError::Usage(format!(
+                "unknown setting `{key}`; run `agb config show` to see the names"
+            ))
+        })?;
+        let parsed = parse_like(current, value)?;
+        let target = match section {
+            Some(section) => file
+                .entry(section)
+                .or_insert_with(|| Value::Table(Table::new()))
+                .as_table_mut()
+                .ok_or_else(|| {
+                    AppError::Config(format!("`{section}` in the config is not a table"))
+                })?,
+            None => &mut file,
+        };
+        target.insert(field.to_string(), parsed);
+        let text = toml::to_string_pretty(&file)
+            .map_err(|e| AppError::Internal(format!("could not serialize config: {e}")))?;
+        let config = toml::from_str::<Self>(&text)
+            .map_err(|e| AppError::Config(format!("invalid value for `{key}`: {}", e.message())))?
+            .checked()?;
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        fs::write(path, text)?;
         Ok(config)
     }
 
@@ -96,6 +157,30 @@ impl Config {
             }
         }
         Ok(())
+    }
+}
+
+/// Reads a command-line value as the type the setting already has; lists are comma separated.
+fn parse_like(current: &Value, raw: &str) -> Result<Value, AppError> {
+    let raw = raw.trim();
+    let expected = |kind: &str| AppError::Usage(format!("expected {kind}, got `{raw}`"));
+    match current {
+        Value::Array(_) => Ok(Value::Array(
+            raw.split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(|item| Value::String(item.to_string()))
+                .collect(),
+        )),
+        Value::Float(_) => raw
+            .parse()
+            .map(Value::Float)
+            .map_err(|_| expected("a number")),
+        Value::Integer(_) => raw
+            .parse()
+            .map(Value::Integer)
+            .map_err(|_| expected("a whole number")),
+        _ => Ok(Value::String(raw.to_string())),
     }
 }
 
@@ -292,6 +377,48 @@ mod tests {
         let mut config = Config::default();
         config.routing.image = vec![ProviderId::Openai, ProviderId::Openai];
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn set_value_writes_only_that_setting() {
+        let dir = std::env::temp_dir().join(format!("agb-config-set-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        let _ = fs::remove_dir_all(&dir);
+
+        let config = Config::set_value(&path, "routing.image", "openrouter, gemini").unwrap();
+        assert_eq!(
+            config.routing.image,
+            vec![ProviderId::Openrouter, ProviderId::Gemini]
+        );
+        let config = Config::set_value(&path, "limits.daily_usd", "3").unwrap();
+        assert_eq!(config.limits.daily_usd, 3.0);
+        assert_eq!(config.routing.image[0], ProviderId::Openrouter);
+        Config::set_value(&path, "http_timeout_secs", "60").unwrap();
+
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(
+            !written.contains("[models]"),
+            "defaults must not be pinned:
+{written}"
+        );
+
+        let unchanged = written.clone();
+        for (key, value) in [
+            ("routing.audio", "openai"),
+            ("routing.image", "openai,openai"),
+            ("routing.image", "dall-e"),
+            ("limits.daily_usd", "a lot"),
+            ("limits.weekly_usd", "1"),
+            ("pricing.x", "1"),
+            ("routing", "openai"),
+        ] {
+            assert!(
+                Config::set_value(&path, key, value).is_err(),
+                "{key} = {value}"
+            );
+        }
+        assert_eq!(fs::read_to_string(&path).unwrap(), unchanged);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

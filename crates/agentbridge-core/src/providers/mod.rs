@@ -6,7 +6,10 @@ pub mod openrouter;
 
 use std::time::Duration;
 
-use reqwest::blocking::{Client, RequestBuilder};
+use reqwest::{
+    blocking::{Client, RequestBuilder},
+    redirect::Policy,
+};
 use serde_json::Value;
 
 use crate::{
@@ -62,6 +65,7 @@ pub trait Provider: Send + Sync {
 }
 
 const VERIFY_TIMEOUT_SECS: u64 = 20;
+const MAX_REDIRECTS: usize = 5;
 /// Short strings are not redacted: they could match ordinary words in an error message.
 const MIN_REDACT_LEN: usize = 8;
 
@@ -74,12 +78,29 @@ pub fn redact(message: &str, secret: &str) -> String {
     message.replace(secret, "[redacted]")
 }
 
+/// The client every provider request goes through. Redirects are only followed within the same
+/// origin: reqwest drops `Authorization` on a cross-origin redirect, but not custom key headers
+/// such as Gemini's `x-goog-api-key` or ElevenLabs' `xi-api-key`.
+pub fn client(timeout: Duration) -> Result<Client, String> {
+    let same_origin = Policy::custom(|attempt| {
+        let origin = attempt.previous().first().map(|first| first.origin());
+        if attempt.previous().len() > MAX_REDIRECTS || origin != Some(attempt.url().origin()) {
+            attempt.stop()
+        } else {
+            attempt.follow()
+        }
+    });
+    Client::builder()
+        .timeout(timeout)
+        .user_agent(concat!("agentbridge/", env!("CARGO_PKG_VERSION")))
+        .redirect(same_origin)
+        .build()
+        .map_err(|e| format!("could not build HTTP client: {e}"))
+}
+
 /// Checks a key without generating anything, so it costs nothing.
 pub fn verify_key(id: ProviderId, api_key: &str) -> Result<(), String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(VERIFY_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| format!("could not build HTTP client: {e}"))?;
+    let client = client(Duration::from_secs(VERIFY_TIMEOUT_SECS))?;
     let response = get(id)
         .verify_request(&client, api_key)
         .send()
@@ -120,7 +141,48 @@ fn unsupported(provider: ProviderId, capability: Capability) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
     use super::*;
+
+    /// Answers one request with a redirect to `location` and returns the server's address.
+    fn redirect_to(location: String) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.read(&mut [0; 4096]);
+            let reply = format!(
+                "HTTP/1.1 302 Found
+Location: {location}
+Content-Length: 0
+Connection: close
+
+"
+            );
+            stream.write_all(reply.as_bytes()).unwrap();
+        });
+        address
+    }
+
+    #[test]
+    fn keys_are_not_sent_to_another_origin() {
+        // Nothing listens on the target: following the redirect would fail to connect.
+        let elsewhere = TcpListener::bind("127.0.0.1:0").unwrap();
+        let target = format!("http://{}/steal", elsewhere.local_addr().unwrap());
+        drop(elsewhere);
+        let response = client(Duration::from_secs(5))
+            .unwrap()
+            .get(redirect_to(target))
+            .header("x-goog-api-key", "secret-key-123")
+            .send()
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 302);
+    }
 
     #[test]
     fn redacts_keys_from_messages() {

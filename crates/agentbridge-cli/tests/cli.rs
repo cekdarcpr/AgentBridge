@@ -406,3 +406,49 @@ fn speech_falls_back_to_openrouter() {
     assert_eq!(json["provider"], "openrouter");
     assert_eq!(json["model"], "google/gemini-3.8-flash-tts");
 }
+
+#[test]
+fn config_set_changes_the_routing() {
+    let sandbox = Sandbox::new("config-set");
+    let keys = [
+        ("OPENAI_API_KEY", "test-openai-key"),
+        ("OPENROUTER_API_KEY", "test-openrouter-key"),
+    ];
+    let (output, json) = sandbox.run(
+        &["config", "set", "routing.image", "openrouter,openai"],
+        &[],
+    );
+    assert!(output.status.success(), "{json}");
+    assert_eq!(json["config"]["routing"]["image"][0], "openrouter");
+
+    let (_, json) = sandbox.run(
+        &["image", "sword", "--out", "sword.png", "--dry-run"],
+        &keys,
+    );
+    assert_eq!(json["provider"], "openrouter");
+
+    let (output, json) = sandbox.run(&["config", "set", "routing.audio", "openai"], &[]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(json["error"]["code"], "config_error");
+}
+
+#[test]
+fn agent_init_writes_the_instructions_once() {
+    let sandbox = Sandbox::new("agent-init");
+    fs::write(sandbox.home.join("CLAUDE.md"), "# Project notes\n").unwrap();
+
+    let (output, json) = sandbox.run(&["agent", "init"], &[]);
+    assert!(output.status.success(), "{json}");
+    assert_eq!(json["files"][0]["change"], "added");
+    assert_eq!(json["files"].as_array().unwrap().len(), 1);
+    let written = fs::read_to_string(sandbox.home.join("CLAUDE.md")).unwrap();
+    assert!(written.starts_with("# Project notes\n"));
+    assert!(written.contains("agb image"));
+
+    let (_, json) = sandbox.run(&["agent", "init"], &[]);
+    assert_eq!(json["files"][0]["change"], "unchanged");
+    assert_eq!(
+        fs::read_to_string(sandbox.home.join("CLAUDE.md")).unwrap(),
+        written
+    );
+}

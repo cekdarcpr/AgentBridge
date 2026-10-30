@@ -148,6 +148,18 @@ The project style applied to every generated image. It is stored in `agentbridge
 
 `agb image` and `agb icon-set` apply the style automatically; `--no-style` skips it for one call.
 
+### `agb agent`
+
+Teaches coding agents to use `agb`.
+
+| Command | Description |
+|---|---|
+| `agb agent init [--file <FILE>]...` | Add the instructions to the project's `CLAUDE.md` and `AGENTS.md`, whichever exist, or create `AGENTS.md` when neither does. `--file` names other files instead, relative to the project root. Running it again updates the instructions in place. |
+| `agb agent instructions` | Print the instructions, to paste into any other instruction file. |
+
+The instructions are written between `<!-- agentbridge:start -->` and `<!-- agentbridge:end -->`; the
+rest of the file is never changed.
+
 ### `agb keys`
 
 | Command | Description |
@@ -185,6 +197,17 @@ The most recent calls, including failures, with provider, model, prompt, output 
 | `agb config path` | Print the locations of the config file and the call log database. |
 | `agb config show` | Print the effective configuration. |
 | `agb config init [--force]` | Write a config file with all defaults, ready to edit. |
+| `agb config set <key> <value>` | Change one setting and keep the rest of the file as it is. Lists are comma separated. |
+
+```bash
+agb config set routing.image openrouter,gemini
+agb config set limits.daily_usd 3
+agb config set models.openrouter_image google/gemini-2.5-flash-image
+```
+
+Settable keys are `http_timeout_secs` and everything under `routing`, `limits` and `models`; prices are
+set in the file itself. Invalid values, such as a provider that does not offer the capability, are
+rejected and the file is left unchanged.
 
 ## JSON output
 

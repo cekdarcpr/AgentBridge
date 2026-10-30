@@ -18,6 +18,7 @@ providers are used, the default models, the spending limits or the prices.
 agb config init     # write a file with every default, ready to edit
 agb config path     # show where it is
 agb config show     # print the configuration agb is actually using
+agb config set routing.image openrouter,gemini   # change one setting without opening the file
 ```
 
 The file uses [TOML](https://toml.io). Settings you leave out keep their default, so a config file can
@@ -79,9 +80,11 @@ with a key is called; if it fails, the next one is tried.
 [routing]
 image = ["gemini", "openrouter"]   # prefer Gemini, fall back to OpenRouter, never use OpenAI
 audio = ["elevenlabs"]
-speech = ["openai"]
+speech = ["openrouter", "elevenlabs"]
 text = ["openrouter"]
 ```
+
+The same from the command line: `agb config set routing.image gemini,openrouter`.
 
 | Provider | `image` | `audio` | `speech` | `text` |
 |---|:---:|:---:|:---:|:---:|
@@ -176,6 +179,10 @@ per_call = 0.04
 input_per_mtok = 1.25
 output_per_mtok = 10.0
 
+# Speech priced by the length of the text, in US dollars per 1,000 characters
+[pricing."elevenlabs/eleven_multilingual_v2"]
+per_1k_chars = 0.08
+
 # OpenRouter models are keyed with their full vendor/model id
 [pricing."openrouter/anthropic/claude-sonnet-4"]
 input_per_mtok = 3.0
@@ -185,7 +192,8 @@ output_per_mtok = 15.0
 With both `per_call` and token prices, `per_call` is used for the budget estimate before the call and
 the token prices for the actual cost afterwards. OpenRouter reports the billed amount itself, so its
 calls are always recorded at the real cost; its prices are only used for the estimate before the call.
-A model with no price at all is estimated at $0.10 per call.
+A model with no price at all is estimated at $0.10 per call, and OpenRouter models whose id ends in
+`:free` at nothing.
 
 ## Environment variables
 

@@ -88,10 +88,10 @@ OpenRouter is one of agentBridge's providers.
 
 ## Quick start
 
-Install with Cargo (Rust 1.82 or newer):
+Install with Cargo (Rust 1.88 or newer):
 
 ```bash
-cargo install --git https://github.com/cekdarcpr/AgentBridge agentbridge-cli
+cargo install --locked --git https://github.com/cekdarcpr/AgentBridge agentbridge-cli
 ```
 
 Add a key for at least one provider and check it:
@@ -114,8 +114,14 @@ To give every image in the project the same look, create a style profile and edi
 agb style init
 ```
 
-Then teach your agent to use it by pasting [`docs/agent-instructions.md`](docs/agent-instructions.md)
-into your project's `CLAUDE.md` or `AGENTS.md`. From then on, a request like *"add a sword icon and a
+Then teach your agent to use it. This adds the [agent instructions](docs/agent-instructions.md) to your
+project's `CLAUDE.md` or `AGENTS.md`:
+
+```bash
+agb agent init
+```
+
+From then on, a request like *"add a sword icon and a
 click sound to the inventory screen"* is enough.
 
 The full walkthrough is in [Getting started](docs/getting-started.md).
@@ -158,7 +164,7 @@ models and the order in which providers are tried are listed in [Configuration](
 | [How it works](docs/concepts.md) | Routing and fallback, the asset pipeline, transparency, consistent style, budgets and privacy. |
 | [Commands](docs/commands.md) | Every command and option, the JSON output and the error codes. |
 | [Configuration](docs/configuration.md) | Routing, default models and voices, the project style, limits, prices and environment variables. |
-| [Agent instructions](docs/agent-instructions.md) | The text to paste into `CLAUDE.md` or `AGENTS.md`. |
+| [Agent instructions](docs/agent-instructions.md) | The text `agb agent init` adds to `CLAUDE.md` or `AGENTS.md`. |
 
 ## Development
 
@@ -168,7 +174,8 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
-Tests never contact a provider. They cover dry runs, validation, budgets and the complete local image
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [SECURITY.md](SECURITY.md) to report a
+vulnerability privately. Tests never contact a provider. They cover dry runs, validation, budgets and the complete local image
 pipeline.
 
 | Crate | Contents |

@@ -12,11 +12,15 @@ AI provider, and your coding agent knows how to use it.
 ## 1. Install agb
 
 agentBridge is built with Rust. If you do not have it yet, install it from [rustup.rs](https://rustup.rs);
-version 1.82 or newer is required. Then install `agb` directly from GitHub:
+version 1.88 or newer is required. Then install `agb` directly from GitHub:
 
 ```bash
-cargo install --git https://github.com/cekdarcpr/AgentBridge agentbridge-cli
+cargo install --locked --git https://github.com/cekdarcpr/AgentBridge agentbridge-cli
 ```
+
+`--locked` builds with the exact dependency versions agentBridge is tested with. On Linux, the
+keychain support also needs the D-Bus development files (`libdbus-1-dev` and `pkg-config` on
+Debian and Ubuntu).
 
 The command is placed in Cargo's bin folder (`~/.cargo/bin`, or `%USERPROFILE%\.cargo\bin` on
 Windows), which is already on your `PATH` after installing Rust. Open a new terminal and check:
@@ -112,14 +116,24 @@ The [Guide](guide.md) has recipes for common assets.
 
 ## 4. Connect your coding agent
 
-Your agent needs to know that `agb` exists and how to use it. Open
-[`agent-instructions.md`](agent-instructions.md) and copy everything below the line into the
-instruction file your agent reads, at the root of your project:
+Your agent needs to know that `agb` exists and how to use it. Run this in your project:
+
+```bash
+agb agent init
+```
+
+It adds the instructions to the file your agent reads at the root of the project, and leaves the rest
+of the file alone:
 
 | Agent | File |
 |---|---|
 | Claude Code | `CLAUDE.md` |
 | Codex, Cursor and most other agents | `AGENTS.md` |
+
+Both are updated when both exist, and `AGENTS.md` is created when neither does. For Claude Code in a
+project without a `CLAUDE.md`, run `agb agent init --file CLAUDE.md`. Run the command again after
+updating `agb` to refresh the instructions. To paste them somewhere else, print them with
+`agb agent instructions`, or copy them from [`agent-instructions.md`](agent-instructions.md).
 
 The instructions tell the agent when to reach for `agb`, to always ask for `--json` output, how to
 choose sizes and formats, and what to do when something fails, for example to stop and ask you when the

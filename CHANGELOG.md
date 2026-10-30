@@ -4,6 +4,43 @@ All notable changes to agentBridge are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`agb agent init`** adds the agent instructions to the project's `CLAUDE.md` and `AGENTS.md`, or
+  creates `AGENTS.md`, between markers so running it again updates them in place.
+  `agb agent instructions` prints them.
+- **`agb config set <key> <value>`** changes one setting, for example
+  `agb config set routing.image openrouter,gemini`, validates it and leaves the rest of the file as is.
+- **Release builds.** Pushing a version tag publishes ready-to-run `agb` archives for Windows, Linux
+  and macOS (Intel and Apple silicon) with SHA-256 checksums.
+- **Free OpenRouter models** (ids ending in `:free`) are estimated and recorded at no cost.
+- `SECURITY.md` and `CONTRIBUTING.md`.
+- **Retries for busy providers.** Rate limits (HTTP 429) and temporary server errors (500, 502, 503,
+  504) are retried up to twice with exponential backoff, honoring `Retry-After` up to 20 seconds,
+  before the next provider is tried. Timeouts are not retried, so a slow request is never billed twice.
+- **Continuous integration.** Formatting, clippy and tests run on Windows, macOS and Linux for every
+  push and pull request, along with a minimum Rust version check and a `cargo audit` scan.
+
+### Changed
+
+- ElevenLabs speech is estimated from the length of the text ($0.08 per 1,000 characters, new
+  `per_1k_chars` price field) instead of a flat $0.03, and sound effects at $0.06, the price of the
+  30 second maximum. Both were underestimated for longer requests.
+
+### Security
+
+- API keys can no longer follow a redirect to another host. reqwest drops `Authorization` on a
+  cross-origin redirect but not custom headers, which would have exposed Gemini and ElevenLabs keys.
+  Redirects are now only followed within the same origin.
+
+### Fixed
+
+- The minimum Rust version is 1.88, not 1.82: current dependencies do not build with older
+  compilers. It is now declared as `rust-version` so Cargo reports it clearly, and the install
+  command uses `--locked` to build with the tested dependency versions.
+
 ## [0.3.0] - 2026-10-27
 
 Every provider can be used for everything it offers, and the assets of a project share one look.
@@ -74,6 +111,7 @@ First release.
 - API keys in the operating system keychain; `agb keys set`, `test`, `list` and `remove`.
 - JSON output, stable error codes and exit codes for agents.
 
+[Unreleased]: https://github.com/cekdarcpr/AgentBridge/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/cekdarcpr/AgentBridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/cekdarcpr/AgentBridge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cekdarcpr/AgentBridge/releases/tag/v0.1.0

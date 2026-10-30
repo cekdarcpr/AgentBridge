@@ -52,13 +52,12 @@ impl Provider for OpenAi {
 }
 
 fn post(ctx: &CallContext, path: &str, body: &Value) -> Result<Response, String> {
-    let response = ctx
-        .http
-        .post(format!("{BASE_URL}{path}"))
-        .bearer_auth(ctx.api_key)
-        .json(body)
-        .send()
-        .map_err(http::network_error)?;
+    let response = http::send(
+        ctx.http
+            .post(format!("{BASE_URL}{path}"))
+            .bearer_auth(ctx.api_key)
+            .json(body),
+    )?;
     http::ensure_success(response)
 }
 
@@ -69,17 +68,16 @@ fn post_multipart(
     png: &[u8],
 ) -> Result<Response, String> {
     let (boundary, body) = multipart_body(fields, png);
-    let response = ctx
-        .http
-        .post(format!("{BASE_URL}{path}"))
-        .bearer_auth(ctx.api_key)
-        .header(
-            "Content-Type",
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .body(body)
-        .send()
-        .map_err(http::network_error)?;
+    let response = http::send(
+        ctx.http
+            .post(format!("{BASE_URL}{path}"))
+            .bearer_auth(ctx.api_key)
+            .header(
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body),
+    )?;
     http::ensure_success(response)
 }
 

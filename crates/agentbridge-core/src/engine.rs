@@ -110,11 +110,8 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(config: Config, store: Store, project: String) -> Result<Self, AppError> {
-        let http = Client::builder()
-            .timeout(Duration::from_secs(config.http_timeout_secs))
-            .user_agent(concat!("agentbridge/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| AppError::Internal(format!("could not build HTTP client: {e}")))?;
+        let http = providers::client(Duration::from_secs(config.http_timeout_secs))
+            .map_err(AppError::Internal)?;
         Ok(Self {
             config,
             store,

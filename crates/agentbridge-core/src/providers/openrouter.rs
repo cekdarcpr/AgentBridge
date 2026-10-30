@@ -53,15 +53,14 @@ impl Provider for OpenRouter {
 fn chat(ctx: &CallContext, mut body: Value) -> Result<Value, String> {
     // Makes OpenRouter return the billed amount, so costs are exact instead of estimated.
     body["usage"] = json!({"include": true});
-    let response = ctx
-        .http
-        .post(format!("{BASE_URL}/chat/completions"))
-        .bearer_auth(ctx.api_key)
-        .header("HTTP-Referer", APP_URL)
-        .header("X-Title", APP_TITLE)
-        .json(&body)
-        .send()
-        .map_err(http::network_error)?;
+    let response = http::send(
+        ctx.http
+            .post(format!("{BASE_URL}/chat/completions"))
+            .bearer_auth(ctx.api_key)
+            .header("HTTP-Referer", APP_URL)
+            .header("X-Title", APP_TITLE)
+            .json(&body),
+    )?;
     let value = http::read_json(http::ensure_success(response)?)?;
     // OpenRouter can report upstream failures inside a 200 response.
     if let Some(message) = value.pointer("/error/message").and_then(Value::as_str) {
@@ -135,15 +134,14 @@ fn image(ctx: &CallContext, r: &ImageRequest) -> Result<ProviderOutput, String> 
 /// The Image API serves every OpenRouter image model, including image-only ones like Qwen Image
 /// that `chat/completions` rejects.
 fn images(ctx: &CallContext, body: &Value) -> Result<Value, String> {
-    let response = ctx
-        .http
-        .post(format!("{BASE_URL}/images"))
-        .bearer_auth(ctx.api_key)
-        .header("HTTP-Referer", APP_URL)
-        .header("X-Title", APP_TITLE)
-        .json(body)
-        .send()
-        .map_err(http::network_error)?;
+    let response = http::send(
+        ctx.http
+            .post(format!("{BASE_URL}/images"))
+            .bearer_auth(ctx.api_key)
+            .header("HTTP-Referer", APP_URL)
+            .header("X-Title", APP_TITLE)
+            .json(body),
+    )?;
     http::read_json(http::ensure_success(response)?)
 }
 
@@ -168,15 +166,14 @@ fn speech(ctx: &CallContext, r: &SpeechRequest) -> Result<ProviderOutput, String
         "voice": r.voice.as_deref().unwrap_or(&ctx.models.openrouter_voice),
         "response_format": response_format,
     });
-    let response = ctx
-        .http
-        .post(format!("{BASE_URL}/audio/speech"))
-        .bearer_auth(ctx.api_key)
-        .header("HTTP-Referer", APP_URL)
-        .header("X-Title", APP_TITLE)
-        .json(&body)
-        .send()
-        .map_err(http::network_error)?;
+    let response = http::send(
+        ctx.http
+            .post(format!("{BASE_URL}/audio/speech"))
+            .bearer_auth(ctx.api_key)
+            .header("HTTP-Referer", APP_URL)
+            .header("X-Title", APP_TITLE)
+            .json(&body),
+    )?;
     let response = http::ensure_success(response)?;
     let header = |name: &str| {
         response

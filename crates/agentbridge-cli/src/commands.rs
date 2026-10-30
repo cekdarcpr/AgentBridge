@@ -13,7 +13,9 @@ use agentbridge_core::{
 use serde::Serialize;
 use serde_json::json;
 
-use crate::{assets, output, Cli, Command, ConfigAction, GenOptions, KeysAction, StyleAction};
+use crate::{
+    agent, assets, output, Cli, Command, ConfigAction, GenOptions, KeysAction, StyleAction,
+};
 
 /// Guards against an agent accidentally attaching a binary or a huge log.
 const MAX_ASK_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -131,6 +133,7 @@ pub fn run(cli: Cli) -> Result<(), RunFailure> {
             generate(&paths, request, out, gen, json)
         }
         Command::Style { action } => Ok(style_command(action, json)?),
+        Command::Agent { action } => Ok(agent::command(action, json)?),
         Command::Keys { action } => Ok(keys(action, json)?),
         Command::Providers => Ok(list_providers(&paths, json)?),
         Command::Usage { days, project } => Ok(usage(&paths, days, project.as_deref(), json)?),
@@ -459,6 +462,17 @@ fn config(paths: &Paths, action: ConfigAction, json: bool) -> Result<(), AppErro
                 output::print_ok(&json!({"config": config}));
             } else {
                 print!("{}", config.to_toml()?);
+            }
+        }
+        ConfigAction::Set { key, value } => {
+            let config = Config::set_value(&paths.config_file, &key, &value)?;
+            if json {
+                output::print_ok(&json!({"config": config}));
+            } else {
+                println!(
+                    "{key} updated in {}",
+                    project::display_path(&paths.config_file)
+                );
             }
         }
         ConfigAction::Init { force } => {

@@ -1,3 +1,4 @@
+mod agent;
 mod assets;
 mod commands;
 mod output;
@@ -185,6 +186,11 @@ enum Command {
         #[command(subcommand)]
         action: StyleAction,
     },
+    /// Teach coding agents to use agb through CLAUDE.md or AGENTS.md
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
     /// Manage API keys in the OS keychain
     Keys {
         #[command(subcommand)]
@@ -245,6 +251,19 @@ enum StyleAction {
 }
 
 #[derive(Subcommand)]
+enum AgentAction {
+    /// Add or update the agb instructions in the project's CLAUDE.md and AGENTS.md (AGENTS.md is
+    /// created when neither exists)
+    Init {
+        /// Instruction file to write instead, relative to the project root (repeatable)
+        #[arg(long = "file", value_name = "FILE")]
+        files: Vec<PathBuf>,
+    },
+    /// Print the instructions, to paste into another agent's instruction file
+    Instructions,
+}
+
+#[derive(Subcommand)]
 enum ConfigAction {
     /// Print the config and database locations
     Path,
@@ -255,6 +274,8 @@ enum ConfigAction {
         #[arg(long)]
         force: bool,
     },
+    /// Change one setting, e.g. `routing.image openrouter,gemini` or `limits.daily_usd 3`
+    Set { key: String, value: String },
 }
 
 fn parse_provider(value: &str) -> Result<ProviderId, String> {
